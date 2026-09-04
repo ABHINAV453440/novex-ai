@@ -1,0 +1,17 @@
+{
+  "users": [
+    {
+      "id": "725e6278-f5b3-472e-a623-cf0ff9c519ac",
+      "username": "abhinav",
+      "passwordHash": "61372adf5ec18638c8c55ded1f491851:f8a5cb70227fc7a30a48693093ccf420b0ace2af6d51365f663af6eab2c8cf2f92497adf512d1673fc9e5f0c37172a3388807a5f4d327ef09d56c1b6852376f5",
+      "chats": [
+        {
+          "id": 1788520758662,
+          "title": "New Chat",
+          "messages": []
+        }
+      ],
+      "createdAt": "2026-09-04T11:16:29.969Z"
+    }
+  ]
+}
