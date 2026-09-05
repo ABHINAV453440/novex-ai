@@ -1,45 +1,66 @@
 <!DOCTYPE html>
+
 <html lang="hi">
 
 <head>
 
   <meta charset="UTF-8">
 
-  <!-- Google Search Console Verification -->
-  <meta
-    name="google-site-verification"
-    content="Ll376QN6E8GAIXULW1EQ43Q95vtw3HbE262z6eOYYyk"
-  >
+  <!-- GOOGLE ANALYTICS -->
 
-  <meta
-    name="viewport"
-    content="width=device-width, initial-scale=1.0"
-  >
+  <script async src="https://www.googletagmanager.com/gtag/js?id=G-K6FBW6ZZSF"></script>
 
-  <!-- SEO -->
-  <meta
-    name="description"
-    content="Novex AI - Your intelligent AI assistant. Ask anything and get smart AI-powered answers."
-  >
+  <script>
+    window.dataLayer = window.dataLayer || [];
 
-  <meta
-    name="keywords"
-    content="Novex AI, Novex, AI assistant, AI chatbot, artificial intelligence, AI tool"
-  >
+    function gtag() {
+      dataLayer.push(arguments);
+    }
 
-  <meta
-    name="robots"
-    content="index, follow"
-  >
+    gtag('js', new Date());
+    gtag('config', 'G-K6FBW6ZZSF');
+  </script>
 
-  <meta
-    name="author"
-    content="Novex AI"
-  >
+<meta
+name="viewport"
+content="width=device-width, initial-scale=1.0"
 
-  <title>Novex AI - Your Intelligent AI Assistant</title>
+>
+
+  <title>Novex AI</title>
+
+  <!-- =====================================================
+       CLERK UI
+  ====================================================== -->
+
+  <script
+    defer
+    crossorigin="anonymous"
+    src="https://close-shrew-6685.clerk.accounts.dev/npm/@clerk/ui@1/dist/ui.browser.js"
+    type="text/javascript">
+  </script>
+
+  <!-- =====================================================
+       CLERK JS
+  ====================================================== -->
+
+  <script
+    defer
+    crossorigin="anonymous"
+    data-clerk-publishable-key="pk_test_Y2xvc2Utc2hyZXctNjY4NS5jbGVyay5hY2NvdW50cy5kZXYk"
+    src="https://close-shrew-6685.clerk.accounts.dev/npm/@clerk/clerk-js@6/dist/clerk.browser.js"
+    type="text/javascript">
+  </script>
+
+  <!-- =====================================================
+       PUTER AI
+  ====================================================== -->
 
   <script src="https://js.puter.com/v2/"></script>
+
+  <!-- =====================================================
+       NOVEX CSS
+  ====================================================== -->
 
   <link
     rel="stylesheet"
@@ -48,13 +69,11 @@
 
 </head>
 
-
 <body>
 
-
-<!-- =====================================================
-     LOGIN SYSTEM
-===================================================== -->
+<!-- =======================================================
+     AUTH SCREEN
+======================================================== -->
 
 <div
   id="authScreen"
@@ -65,167 +84,43 @@
 
   <div class="auth-card">
 
+```
+<div class="auth-logo">
+  N
+</div>
 
-    <div class="auth-logo">
-      N
-    </div>
+<h1>
+  Novex AI
+</h1>
 
+<p class="auth-subtitle">
+  Your intelligent AI assistant
+</p>
 
-    <h1>
-      Novex AI
-    </h1>
+<div
+  id="clerkSignIn"
+  class="clerk-login"
+>
 
+  <div class="auth-loading">
+    Loading secure login...
+  </div>
 
-    <p class="auth-subtitle">
-      Your intelligent AI assistant
-    </p>
-
-
-    <!-- LOGIN -->
-
-    <div
-      id="loginPanel"
-      class="auth-panel"
-    >
-
-      <h2>
-        Welcome Back
-      </h2>
-
-      <p>
-        Login to continue
-      </p>
-
-
-      <input
-        id="loginUsername"
-        type="text"
-        placeholder="Username"
-        autocomplete="username"
-      >
-
-
-      <input
-        id="loginPassword"
-        type="password"
-        placeholder="Password"
-        autocomplete="current-password"
-      >
-
-
-      <button
-        class="auth-main-btn"
-        onclick="loginUser()"
-      >
-        Login
-      </button>
-
-
-      <div
-        id="loginError"
-        class="auth-error"
-      ></div>
-
-
-      <p class="switch-auth">
-
-        New to Novex?
-
-        <button
-          onclick="showSignup()"
-        >
-          Create account
-        </button>
-
-      </p>
-
-    </div>
-
-
-    <!-- SIGNUP -->
-
-    <div
-      id="signupPanel"
-      class="auth-panel hidden"
-    >
-
-      <h2>
-        Create Account
-      </h2>
-
-      <p>
-        Start using Novex AI
-      </p>
-
-
-      <input
-        id="signupUsername"
-        type="text"
-        placeholder="Username"
-        autocomplete="username"
-      >
-
-
-      <input
-        id="signupPassword"
-        type="password"
-        placeholder="Password (min 6 characters)"
-        autocomplete="new-password"
-      >
-
-
-      <input
-        id="signupPassword2"
-        type="password"
-        placeholder="Confirm password"
-        autocomplete="new-password"
-      >
-
-
-      <button
-        class="auth-main-btn"
-        onclick="signupUser()"
-      >
-        Create Account
-      </button>
-
-
-      <div
-        id="signupError"
-        class="auth-error"
-      ></div>
-
-
-      <p class="switch-auth">
-
-        Already have account?
-
-        <button
-          onclick="showLogin()"
-        >
-          Login
-        </button>
-
-      </p>
-
-    </div>
-
+</div>
+```
 
   </div>
 
 </div>
 
-
-
-<!-- =====================================================
+<!-- =======================================================
      APP
-===================================================== -->
+======================================================== -->
 
 <div
   id="app"
   class="app hidden"
 >
-
 
   <!-- SIDEBAR -->
 
@@ -234,454 +129,432 @@
     id="sidebar"
   >
 
+```
+<div class="brand">
 
-    <div class="brand">
+  <div class="logo">
+    N
+  </div>
 
+  <div>
 
-      <div class="logo">
-        N
-      </div>
+    <h2>
+      Novex AI
+    </h2>
 
+    <span>
+      One AI. Everything.
+    </span>
 
-      <div>
+  </div>
 
-        <h2>
-          Novex AI
-        </h2>
-
-        <span>
-          One AI. Everything.
-        </span>
-
-      </div>
-
-
-    </div>
+</div>
 
 
-    <button
-      class="new-chat"
-      onclick="newChat()"
+<!-- NEW CHAT -->
+
+<button
+  class="new-chat"
+  onclick="newChat()"
+>
+  ＋ New Chat
+</button>
+
+
+<!-- USER -->
+
+<div class="user-card">
+
+  <div
+    id="userAvatar"
+    class="user-avatar"
+  >
+    👤
+  </div>
+
+  <div class="user-info">
+
+    <strong
+      id="loggedUsername"
     >
-      ＋ New Chat
-    </button>
+      User
+    </strong>
+
+    <span>
+      Google account
+    </span>
+
+  </div>
+
+  <div
+    id="clerkUserButton"
+    class="clerk-user-button"
+  ></div>
+
+</div>
 
 
-    <!-- USER -->
+<!-- CHAT HISTORY -->
 
-    <div class="user-card">
+<div
+  class="section-title history-heading"
+>
 
-      <div class="user-avatar">
-        👤
-      </div>
+  <span>
+    CHAT HISTORY
+  </span>
 
-      <div class="user-info">
+  <button
+    onclick="clearHistory()"
+  >
+    Clear
+  </button>
 
-        <strong
-          id="loggedUsername"
-        >
-          User
-        </strong>
-
-        <span>
-          Logged in
-        </span>
-
-      </div>
+</div>
 
 
-      <button
-        class="logout-btn"
-        onclick="logoutUser()"
-        title="Logout"
-      >
-        🚪
-      </button>
-
-    </div>
+<div
+  id="historyList"
+  class="history-list"
+></div>
 
 
-    <!-- HISTORY -->
+<!-- ONLINE -->
 
-    <div
-      class="section-title history-heading"
-    >
+<div class="sidebar-bottom">
 
-      <span>
-        CHAT HISTORY
-      </span>
+  <span class="online-dot"></span>
 
-      <button
-        onclick="clearHistory()"
-      >
-        Clear
-      </button>
+  Novex Online
 
-    </div>
-
-
-    <div
-      id="historyList"
-      class="history-list"
-    ></div>
-
-
-    <div class="sidebar-bottom">
-
-      <span class="online-dot"></span>
-
-      Novex Online
-
-    </div>
-
+</div>
+```
 
   </aside>
 
-
-
-  <!-- MAIN -->
+  <!-- =====================================================
+       MAIN
+  ====================================================== -->
 
   <main class="main">
 
+```
+<!-- TOP BAR -->
 
-    <header class="topbar">
+<header class="topbar">
 
-
-      <button
-        class="menu-btn"
-        onclick="toggleSidebar()"
-      >
-        ☰
-      </button>
-
-
-      <div class="top-brand">
+  <button
+    class="menu-btn"
+    onclick="toggleSidebar()"
+  >
+    ☰
+  </button>
 
 
-        <div class="small-logo">
-          N
-        </div>
+  <div class="top-brand">
 
+    <div class="small-logo">
+      N
+    </div>
 
-        <div>
+    <div>
 
-          <strong>
-            Novex AI
-          </strong>
+      <strong>
+        Novex AI
+      </strong>
 
-          <span
-            id="statusText"
-          >
-            Ready to help
-          </span>
-
-        </div>
-
-
-      </div>
-
-
-      <div class="top-actions">
-
-
-        <button
-          onclick="newChat()"
-          title="New Chat"
-        >
-          ＋
-        </button>
-
-
-        <button
-          onclick="toggleThemeMenu()"
-          title="Theme"
-        >
-          🎨
-        </button>
-
-
-      </div>
-
-
-    </header>
-
-
-
-    <!-- THEME -->
-
-    <div
-      class="theme-menu"
-      id="themeMenu"
-    >
-
-      <h3>
-        Theme
-      </h3>
-
-
-      <button
-        onclick="setTheme('black')"
-      >
-        ⚫ Black
-      </button>
-
-
-      <button
-        onclick="setTheme('white')"
-      >
-        ⚪ White
-      </button>
-
+      <span id="statusText">
+        Ready to help
+      </span>
 
     </div>
 
+  </div>
 
 
-    <!-- CONTENT -->
+  <div class="top-actions">
 
-    <section class="content">
+    <button
+      onclick="newChat()"
+      title="New Chat"
+    >
+      ＋
+    </button>
+
+    <button
+      onclick="toggleThemeMenu()"
+      title="Theme"
+    >
+      🎨
+    </button>
+
+  </div>
+
+</header>
 
 
-      <!-- WELCOME -->
+<!-- =====================================================
+     THEME MENU
+====================================================== -->
+
+<div
+  class="theme-menu"
+  id="themeMenu"
+>
+
+  <h3>
+    Theme
+  </h3>
+
+  <button
+    onclick="setTheme('black')"
+  >
+    ⚫ Black
+  </button>
+
+  <button
+    onclick="setTheme('white')"
+  >
+    ⚪ White
+  </button>
+
+</div>
+
+
+<!-- =====================================================
+     CONTENT
+====================================================== -->
+
+<section class="content">
+
+
+  <!-- WELCOME -->
+
+  <div
+    id="welcome"
+    class="welcome"
+  >
+
+    <div class="hero-logo">
+      N
+    </div>
+
+    <h1>
+
+      Welcome to
+
+      <span>
+        Novex AI
+      </span>
+
+    </h1>
+
+    <p>
+
+      Ask anything. Novex automatically understands
+      your request and chooses the right AI system.
+
+    </p>
+
+  </div>
+
+
+  <!-- CHAT MESSAGES -->
+
+  <div
+    id="messages"
+  ></div>
+
+
+  <!-- ===================================================
+       IMAGE GENERATOR
+  ==================================================== -->
+
+  <div
+    id="imageArea"
+    class="special-area hidden"
+  >
+
+    <div class="special-card">
+
+      <div class="special-icon">
+        🖼️
+      </div>
+
+      <h2>
+        AI Image Generator
+      </h2>
+
+      <p
+        id="imagePromptText"
+      ></p>
 
       <div
-        id="welcome"
-        class="welcome"
+        id="imageLoading"
+        class="loading hidden"
       >
 
-        <div class="hero-logo">
-          N
-        </div>
+        <div class="spinner"></div>
 
-
-        <h1>
-
-          Welcome to
-          <span>
-            Novex AI
-          </span>
-
-        </h1>
-
-
-        <p>
-
-          Ask anything. Novex automatically understands
-          your request and chooses the right AI system.
-
-        </p>
+        <span>
+          Image generate ho rahi hai...
+        </span>
 
       </div>
 
-
-
-      <!-- MESSAGES -->
-
       <div
-        id="messages"
+        id="imageResult"
       ></div>
 
+    </div>
+
+  </div>
 
 
-      <!-- IMAGE -->
+  <!-- ===================================================
+       WEBSITE BUILDER
+  ==================================================== -->
+
+  <div
+    id="websiteArea"
+    class="special-area hidden"
+  >
+
+    <div class="special-card">
+
+      <div class="special-icon">
+        🌐
+      </div>
+
+      <h2>
+        Website Builder
+      </h2>
 
       <div
-        id="imageArea"
-        class="special-area hidden"
+        id="websiteLoading"
+        class="loading hidden"
       >
 
-        <div class="special-card">
+        <div class="spinner"></div>
 
-          <div class="special-icon">
-            🖼️
-          </div>
-
-          <h2>
-            AI Image Generator
-          </h2>
-
-          <p
-            id="imagePromptText"
-          ></p>
-
-
-          <div
-            id="imageLoading"
-            class="loading hidden"
-          >
-
-            <div class="spinner"></div>
-
-            <span>
-              Image generate ho rahi hai...
-            </span>
-
-          </div>
-
-
-          <div
-            id="imageResult"
-          ></div>
-
-        </div>
+        <span>
+          Website code ban raha hai...
+        </span>
 
       </div>
-
-
-
-      <!-- WEBSITE -->
 
       <div
-        id="websiteArea"
-        class="special-area hidden"
-      >
+        id="websiteResult"
+      ></div>
 
-        <div class="special-card">
+    </div>
 
-          <div class="special-icon">
-            🌐
-          </div>
-
-          <h2>
-            Website Builder
-          </h2>
+  </div>
 
 
-          <div
-            id="websiteLoading"
-            class="loading hidden"
-          >
+  <!-- ===================================================
+       WEB SEARCH
+  ==================================================== -->
 
-            <div class="spinner"></div>
+  <div
+    id="searchArea"
+    class="special-area hidden"
+  >
 
-            <span>
-              Website code ban raha hai...
-            </span>
+    <div class="special-card">
 
-          </div>
-
-
-          <div
-            id="websiteResult"
-          ></div>
-
-        </div>
-
+      <div class="special-icon">
+        🔎
       </div>
 
-
-
-      <!-- SEARCH -->
+      <h2>
+        Web Search
+      </h2>
 
       <div
-        id="searchArea"
-        class="special-area hidden"
+        id="searchLoading"
+        class="loading hidden"
       >
 
-        <div class="special-card">
+        <div class="spinner"></div>
 
-          <div class="special-icon">
-            🔎
-          </div>
-
-          <h2>
-            Web Search
-          </h2>
-
-
-          <div
-            id="searchLoading"
-            class="loading hidden"
-          >
-
-            <div class="spinner"></div>
-
-            <span>
-              Internet par search ho raha hai...
-            </span>
-
-          </div>
-
-
-          <div
-            id="searchResult"
-          ></div>
-
-        </div>
+        <span>
+          Internet par search ho raha hai...
+        </span>
 
       </div>
 
+      <div
+        id="searchResult"
+      ></div>
 
-    </section>
+    </div>
 
-
-
-    <!-- SEARCH BOX -->
-
-    <footer class="composer-area">
-
-
-      <div class="composer">
+  </div>
 
 
-        <textarea
-          id="userInput"
-          rows="1"
-          placeholder="Ask Novex anything..."
-          onkeydown="handleKeyPress(event)"
-          oninput="autoResize(this)"
-        ></textarea>
+</section>
 
 
-        <button
-          class="voice-button"
-          onclick="startVoiceInput()"
-          title="Voice"
-        >
-          🎤
-        </button>
+<!-- =====================================================
+     CHAT COMPOSER
+====================================================== -->
+
+<footer class="composer-area">
+
+  <div class="composer">
+
+    <textarea
+      id="userInput"
+      rows="1"
+      placeholder="Ask Novex anything..."
+      onkeydown="handleKeyPress(event)"
+      oninput="autoResize(this)"
+    ></textarea>
 
 
-        <button
-          class="send-button"
-          onclick="sendMessage()"
-          title="Send"
-        >
-          ➤
-        </button>
+    <button
+      class="voice-button"
+      onclick="startVoiceInput()"
+      title="Voice"
+    >
+      🎤
+    </button>
 
 
-      </div>
+    <button
+      class="send-button"
+      onclick="sendMessage()"
+      title="Send"
+    >
+      ➤
+    </button>
+
+  </div>
 
 
-      <div class="composer-hint">
+  <div class="composer-hint">
 
-        Novex automatically chooses the right AI tool
+    Novex automatically chooses the right AI tool
 
-      </div>
+  </div>
 
-
-    </footer>
-
+</footer>
+```
 
   </main>
 
 </div>
 
-
-
 <!-- TOAST -->
 
-<div
-  id="toast"
-></div>
+<div id="toast"></div>
 
-
-
-<!-- JAVASCRIPT -->
+<!-- =====================================================
+     NOVEX JAVASCRIPT
+====================================================== -->
 
 <script src="script.js"></script>
-
 
 </body>
 
