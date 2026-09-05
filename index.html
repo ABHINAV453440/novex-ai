@@ -4,10 +4,7 @@
 <head>
   <meta charset="UTF-8">
 
-  <meta
-    name="viewport"
-    content="width=device-width, initial-scale=1.0"
-  >
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
   <meta
     name="description"
@@ -19,11 +16,9 @@
     content="Novex AI, AI assistant, AI chat, image generator, website generator"
   >
 
-  <meta
-    name="author"
-    content="Novex AI"
-  >
+  <meta name="author" content="Novex AI">
 
+  <!-- GOOGLE SEARCH CONSOLE -->
   <meta
     name="google-site-verification"
     content="Ll376QN6E8GAIXULW1EQ43Q95vtw3HbE262z6eOYYyk"
@@ -81,7 +76,7 @@
   <script src="https://js.puter.com/v2/"></script>
 
   <!-- =====================================================
-       STYLES
+       NOVEX CSS
        ===================================================== -->
 
   <link rel="stylesheet" href="style.css">
@@ -90,13 +85,10 @@
 <body>
 
   <!-- =====================================================
-       AUTH / LOGIN SCREEN
+       AUTH SCREEN
        ===================================================== -->
 
-  <div
-    id="authScreen"
-    class="auth-screen"
-  >
+  <div id="authScreen" class="auth-screen">
 
     <div class="auth-glow"></div>
 
@@ -106,18 +98,13 @@
         N
       </div>
 
-      <h1>
-        Novex AI
-      </h1>
+      <h1>Novex AI</h1>
 
       <p class="auth-subtitle">
         Your intelligent AI assistant
       </p>
 
-      <div
-        id="clerkSignIn"
-        class="clerk-login"
-      >
+      <div id="clerkSignIn" class="clerk-login">
 
         <div class="auth-loading">
           Loading secure login...
@@ -134,21 +121,15 @@
        MAIN APPLICATION
        ===================================================== -->
 
-  <div
-    id="app"
-    class="app hidden"
-  >
+  <div id="app" class="app hidden">
 
     <!-- ===================================================
          SIDEBAR
          =================================================== -->
 
-    <aside
-      id="sidebar"
-      class="sidebar"
-    >
+    <aside id="sidebar" class="sidebar">
 
-      <!-- LOGO -->
+      <!-- SIDEBAR HEADER -->
 
       <div class="sidebar-header">
 
@@ -159,8 +140,11 @@
           </div>
 
           <div class="brand-text">
+
             <strong>Novex</strong>
+
             <span>AI</span>
+
           </div>
 
         </div>
@@ -170,6 +154,7 @@
           type="button"
           onclick="toggleSidebar()"
           aria-label="Toggle sidebar"
+          title="Toggle sidebar"
         >
           ☰
         </button>
@@ -200,7 +185,7 @@
       </div>
 
 
-      <!-- HISTORY -->
+      <!-- CHAT HISTORY -->
 
       <div class="history-section">
 
@@ -210,8 +195,7 @@
 
         <div
           id="historyList"
-          class="history-list"
-        >
+          class="history-list">
         </div>
 
       </div>
@@ -221,10 +205,13 @@
 
       <div class="sidebar-bottom">
 
+        <!-- THEME -->
+
         <button
           id="themeToggle"
           class="sidebar-option"
           type="button"
+          title="Change theme"
         >
 
           <span>
@@ -238,10 +225,13 @@
         </button>
 
 
+        <!-- CLEAR ALL -->
+
         <button
           class="sidebar-option"
           type="button"
           onclick="clearHistory()"
+          title="Clear all chat history"
         >
 
           <span>
@@ -249,7 +239,7 @@
           </span>
 
           <span>
-            Clear History
+            Clear All
           </span>
 
         </button>
@@ -322,8 +312,7 @@
 
           <div
             id="clerkUserButton"
-            class="clerk-user-button"
-          >
+            class="clerk-user-button">
           </div>
 
         </div>
@@ -341,7 +330,9 @@
       >
 
 
-        <!-- WELCOME -->
+        <!-- =================================================
+             WELCOME SCREEN
+             ================================================= -->
 
         <div
           id="welcomeScreen"
@@ -366,10 +357,16 @@
           <div class="quick-actions">
 
 
+            <!-- ASK ANYTHING -->
+
             <button
               class="quick-action"
               type="button"
-              onclick="document.getElementById('messageInput').value='Explain artificial intelligence in simple words'; document.getElementById('messageInput').focus();"
+              onclick="
+                document.getElementById('messageInput').value =
+                'Explain artificial intelligence in simple words';
+                document.getElementById('messageInput').focus();
+              "
             >
 
               <span class="quick-icon">
@@ -383,10 +380,16 @@
             </button>
 
 
+            <!-- WEBSITE -->
+
             <button
               class="quick-action"
               type="button"
-              onclick="document.getElementById('messageInput').value='Create a modern website for my business'; document.getElementById('messageInput').focus();"
+              onclick="
+                document.getElementById('messageInput').value =
+                'Create a modern website for my business';
+                document.getElementById('messageInput').focus();
+              "
             >
 
               <span class="quick-icon">
@@ -400,10 +403,16 @@
             </button>
 
 
+            <!-- IMAGE -->
+
             <button
               class="quick-action"
               type="button"
-              onclick="document.getElementById('messageInput').value='Create an image of a futuristic city'; document.getElementById('messageInput').focus();"
+              onclick="
+                document.getElementById('messageInput').value =
+                'Create an image of a futuristic city';
+                document.getElementById('messageInput').focus();
+              "
             >
 
               <span class="quick-icon">
@@ -417,10 +426,16 @@
             </button>
 
 
+            <!-- WEB SEARCH -->
+
             <button
               class="quick-action"
               type="button"
-              onclick="document.getElementById('messageInput').value='Search the web for the latest AI news'; document.getElementById('messageInput').focus();"
+              onclick="
+                document.getElementById('messageInput').value =
+                'Search the web for the latest AI news';
+                document.getElementById('messageInput').focus();
+              "
             >
 
               <span class="quick-icon">
@@ -444,8 +459,7 @@
 
         <div
           id="messages"
-          class="messages"
-        >
+          class="messages">
         </div>
 
 
@@ -455,8 +469,7 @@
 
         <div
           id="imageArea"
-          class="special-area image-area hidden"
-        >
+          class="special-area image-area hidden">
         </div>
 
 
@@ -466,8 +479,7 @@
 
         <div
           id="websiteArea"
-          class="special-area website-area hidden"
-        >
+          class="special-area website-area hidden">
         </div>
 
 
@@ -477,9 +489,9 @@
 
         <div
           id="searchArea"
-          class="special-area search-area hidden"
-        >
+          class="special-area search-area hidden">
         </div>
+
 
       </section>
 
@@ -490,9 +502,63 @@
 
       <div class="composer-wrapper">
 
-        <div
-          class="composer"
-        >
+        <div class="composer">
+
+
+          <!-- =================================================
+               FILE / PDF BUTTON
+               ================================================= -->
+
+          <button
+            id="fileButton"
+            class="composer-btn file-btn"
+            type="button"
+            aria-label="Attach file or PDF"
+            title="Attach PDF / File"
+            onclick="
+              document.getElementById('fileInput').click();
+            "
+          >
+            +
+          </button>
+
+
+          <!-- HIDDEN FILE INPUT -->
+
+          <input
+            id="fileInput"
+            type="file"
+            accept=".pdf,.txt,.doc,.docx,.jpg,.jpeg,.png,.webp"
+            hidden
+          >
+
+
+          <!-- SELECTED FILE NAME -->
+
+          <div
+            id="selectedFile"
+            class="selected-file hidden"
+          >
+
+            <span id="selectedFileName">
+              File
+            </span>
+
+            <button
+              id="removeSelectedFile"
+              type="button"
+              aria-label="Remove file"
+              title="Remove file"
+            >
+              ×
+            </button>
+
+          </div>
+
+
+          <!-- =================================================
+               MESSAGE INPUT
+               ================================================= -->
 
           <textarea
             id="messageInput"
@@ -504,7 +570,9 @@
           ></textarea>
 
 
-          <!-- VOICE -->
+          <!-- =================================================
+               VOICE
+               ================================================= -->
 
           <button
             class="composer-btn voice-btn"
@@ -517,7 +585,9 @@
           </button>
 
 
-          <!-- SEND -->
+          <!-- =================================================
+               SEND
+               ================================================= -->
 
           <button
             class="composer-btn send-btn"
@@ -529,8 +599,11 @@
             ➤
           </button>
 
+
         </div>
 
+
+        <!-- COMPOSER HINT -->
 
         <div class="composer-hint">
           Novex AI can make mistakes. Check important information.
@@ -544,10 +617,11 @@
 
 
   <!-- =====================================================
-       CLERK UI INITIALIZATION
+       CLERK INITIALIZATION
        ===================================================== -->
 
   <script>
+
     window.__novexClerkReady = false;
 
     window.addEventListener("load", async function () {
@@ -555,10 +629,6 @@
       try {
 
         let attempts = 0;
-
-        /*
-          Wait for both Clerk JS and Clerk UI bundle.
-        */
 
         while (
           (
@@ -568,17 +638,14 @@
           attempts < 150
         ) {
 
-          await new Promise(
-            resolve => setTimeout(resolve, 100)
-          );
+          await new Promise(function(resolve) {
+            setTimeout(resolve, 100);
+          });
 
           attempts++;
+
         }
 
-
-        /*
-          Clerk JS missing
-        */
 
         if (typeof window.Clerk === "undefined") {
 
@@ -587,15 +654,13 @@
           );
 
           return;
+
         }
 
 
-        /*
-          Clerk UI missing
-        */
-
         if (
-          typeof window.__internal_ClerkUICtor === "undefined"
+          typeof window.__internal_ClerkUICtor ===
+          "undefined"
         ) {
 
           console.error(
@@ -603,13 +668,9 @@
           );
 
           return;
+
         }
 
-
-        /*
-          IMPORTANT:
-          Load Clerk WITH UI components.
-        */
 
         await window.Clerk.load({
 
@@ -632,17 +693,8 @@
         );
 
 
-        /*
-          Tell script.js that Clerk is ready.
-        */
-
         window.__novexClerkReady = true;
 
-
-        /*
-          Also dispatch an event in case script.js
-          is already waiting for it.
-        */
 
         window.dispatchEvent(
           new CustomEvent(
@@ -661,14 +713,97 @@
       }
 
     });
+
   </script>
 
 
   <!-- =====================================================
-       NOVEX SCRIPT
+       NOVEX JAVASCRIPT
        ===================================================== -->
 
   <script src="script.js"></script>
+
+
+  <!-- =====================================================
+       FILE UI HELPER
+       ===================================================== -->
+
+  <script>
+
+    document.addEventListener(
+      "DOMContentLoaded",
+      function () {
+
+        const fileInput =
+          document.getElementById("fileInput");
+
+        const selectedFile =
+          document.getElementById("selectedFile");
+
+        const selectedFileName =
+          document.getElementById(
+            "selectedFileName"
+          );
+
+        const removeSelectedFile =
+          document.getElementById(
+            "removeSelectedFile"
+          );
+
+
+        if (!fileInput) {
+          return;
+        }
+
+
+        fileInput.addEventListener(
+          "change",
+          function () {
+
+            const file =
+              this.files && this.files[0];
+
+            if (!file) {
+              return;
+            }
+
+
+            selectedFileName.textContent =
+              file.name;
+
+
+            selectedFile.classList.remove(
+              "hidden"
+            );
+
+          }
+        );
+
+
+        if (removeSelectedFile) {
+
+          removeSelectedFile.addEventListener(
+            "click",
+            function () {
+
+              fileInput.value = "";
+
+              selectedFile.classList.add(
+                "hidden"
+              );
+
+              selectedFileName.textContent =
+                "File";
+
+            }
+          );
+
+        }
+
+      }
+    );
+
+  </script>
 
 </body>
 </html>

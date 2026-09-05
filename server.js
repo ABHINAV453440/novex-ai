@@ -4,583 +4,225 @@ const express = require("express");
 const cors = require("cors");
 const fs = require("fs");
 const path = require("path");
-const crypto = require("crypto");
+
+const {
+    clerkMiddleware,
+    getAuth
+} = require("@clerk/express");
 
 const app = express();
 
-const PORT = process.env.PORT || 3000;
+const PORT =
+    process.env.PORT || 3000;
 
-const USERS_FILE = path.join(
-  __dirname,
-  "users.json"
+const DATA_FILE =
+    path.join(
+        __dirname,
+        "clerk-users.json"
+    );
+
+
+/* =====================================================
+   CHECK ENV
+===================================================== */
+
+console.log(
+    "CLERK SECRET:",
+    Boolean(process.env.CLERK_SECRET_KEY)
+);
+
+console.log(
+    "OPENROUTER KEY:",
+    Boolean(process.env.OPENROUTER_API_KEY)
 );
 
 
 /* =====================================================
-   APP SETUP
+   CLERK FIRST
+   IMPORTANT:
+   Clerk middleware must come BEFORE
+   other middleware.
 ===================================================== */
 
-app.use(cors());
-
 app.use(
-  express.json({
-    limit: "20mb"
-  })
-);
-
-app.use(
-  express.static(__dirname)
+    clerkMiddleware()
 );
 
 
 /* =====================================================
-   USERS FILE
+   OTHER MIDDLEWARE
 ===================================================== */
 
-function ensureUsersFile() {
+app.use(
+    cors({
+        origin: true,
+        credentials: true
+    })
+);
 
-  if (!fs.existsSync(USERS_FILE)) {
+app.use(
+    express.json({
+        limit: "20mb"
+    })
+);
+
+app.use(
+    express.static(__dirname)
+);
+
+
+/* =====================================================
+   HOME
+===================================================== */
+
+app.get("/", (req, res) => {
+
+    res.sendFile(
+        path.join(
+            __dirname,
+            "index.html"
+        )
+    );
+});
+
+
+/* =====================================================
+   DATA FILE
+===================================================== */
+
+function ensureDataFile() {
+
+    if (!fs.existsSync(DATA_FILE)) {
+
+        fs.writeFileSync(
+            DATA_FILE,
+            JSON.stringify(
+                {
+                    users: {}
+                },
+                null,
+                2
+            )
+        );
+    }
+}
+
+
+function loadData() {
+
+    ensureDataFile();
+
+    try {
+
+        const data =
+            JSON.parse(
+                fs.readFileSync(
+                    DATA_FILE,
+                    "utf8"
+                )
+            );
+
+        if (
+            !data ||
+            typeof data.users !== "object"
+        ) {
+
+            return {
+                users: {}
+            };
+        }
+
+        return data;
+
+    } catch (error) {
+
+        console.error(
+            "DATA LOAD ERROR:",
+            error
+        );
+
+        return {
+            users: {}
+        };
+    }
+}
+
+
+function saveData(data) {
 
     fs.writeFileSync(
-      USERS_FILE,
-      JSON.stringify(
-        {
-          users: []
-        },
-        null,
-        2
-      )
-    );
-
-  }
-
-}
-
-
-function loadUsers() {
-
-  ensureUsersFile();
-
-  try {
-
-    const data =
-      JSON.parse(
-        fs.readFileSync(
-          USERS_FILE,
-          "utf8"
+        DATA_FILE,
+        JSON.stringify(
+            data,
+            null,
+            2
         )
-      );
-
-    if (
-      !data ||
-      !Array.isArray(data.users)
-    ) {
-      return [];
-    }
-
-    return data.users;
-
-  }
-
-  catch (error) {
-
-    console.error(
-      "USERS FILE ERROR:",
-      error
     );
-
-    return [];
-
-  }
-
 }
 
 
-function saveUsers(users) {
-
-  fs.writeFileSync(
-    USERS_FILE,
-    JSON.stringify(
-      {
-        users
-      },
-      null,
-      2
-    )
-  );
-
-}
-
-
-ensureUsersFile();
+ensureDataFile();
 
 
 /* =====================================================
-   PASSWORD HASHING
-===================================================== */
-
-function hashPassword(password) {
-
-  const salt =
-    crypto.randomBytes(16);
-
-  const hash =
-    crypto.scryptSync(
-      password,
-      salt,
-      64
-    );
-
-  return (
-    salt.toString("hex") +
-    ":" +
-    hash.toString("hex")
-  );
-
-}
-
-
-function verifyPassword(
-  password,
-  storedPassword
-) {
-
-  try {
-
-    const parts =
-      storedPassword.split(":");
-
-    if (parts.length !== 2) {
-      return false;
-    }
-
-    const salt =
-      Buffer.from(
-        parts[0],
-        "hex"
-      );
-
-    const storedHash =
-      Buffer.from(
-        parts[1],
-        "hex"
-      );
-
-    const hash =
-      crypto.scryptSync(
-        password,
-        salt,
-        64
-      );
-
-    return crypto.timingSafeEqual(
-      storedHash,
-      hash
-    );
-
-  }
-
-  catch {
-
-    return false;
-
-  }
-
-}
-
-
-/* =====================================================
-   SESSIONS
-===================================================== */
-
-const sessions =
-  new Map();
-
-
-function createSession(userId) {
-
-  const token =
-    crypto.randomBytes(48)
-      .toString("hex");
-
-  sessions.set(
-    token,
-    {
-      userId,
-      createdAt: Date.now()
-    }
-  );
-
-  return token;
-
-}
-
-
-function getUserFromToken(token) {
-
-  if (!token) {
-    return null;
-  }
-
-  const session =
-    sessions.get(token);
-
-  if (!session) {
-    return null;
-  }
-
-  const users =
-    loadUsers();
-
-  return (
-    users.find(
-      user =>
-        user.id === session.userId
-    ) || null
-  );
-
-}
-
-
-/* =====================================================
-   AUTH MIDDLEWARE
+   AUTH HELPER
 ===================================================== */
 
 function requireAuth(
-  req,
-  res,
-  next
+    req,
+    res,
+    next
 ) {
 
-  const auth =
-    req.headers.authorization || "";
-
-  const token =
-    auth.startsWith("Bearer ")
-      ? auth.slice(7)
-      : "";
-
-  const user =
-    getUserFromToken(token);
-
-  if (!user) {
-
-    return res.status(401).json({
-
-      success: false,
-
-      error:
-        "Login required"
-
-    });
-
-  }
-
-  req.user = user;
-  req.token = token;
-
-  next();
-
-}
-
-
-/* =====================================================
-   SIGN UP
-===================================================== */
-
-app.post(
-  "/api/signup",
-  async (req, res) => {
-
     try {
 
-      const username =
-        String(
-          req.body?.username || ""
-        ).trim();
+        const auth =
+            getAuth(req);
 
-      const password =
-        String(
-          req.body?.password || ""
+        console.log(
+            "AUTH CHECK:",
+            {
+                isAuthenticated:
+                    auth.isAuthenticated,
+
+                userId:
+                    auth.userId || null,
+
+                sessionId:
+                    auth.sessionId || null
+            }
         );
 
+        if (!auth.isAuthenticated) {
 
-      if (
-        username.length < 3 ||
-        username.length > 30
-      ) {
-
-        return res.status(400).json({
-
-          success: false,
-
-          error:
-            "Username 3-30 characters ka hona chahiye."
-
-        });
-
-      }
-
-
-      if (!/^[a-zA-Z0-9_]+$/.test(username)) {
-
-        return res.status(400).json({
-
-          success: false,
-
-          error:
-            "Username me sirf letters, numbers aur _ use karo."
-
-        });
-
-      }
-
-
-      if (password.length < 6) {
-
-        return res.status(400).json({
-
-          success: false,
-
-          error:
-            "Password kam se kam 6 characters ka hona chahiye."
-
-        });
-
-      }
-
-
-      const users =
-        loadUsers();
-
-
-      const exists =
-        users.some(
-          user =>
-            user.username.toLowerCase() ===
-            username.toLowerCase()
-        );
-
-
-      if (exists) {
-
-        return res.status(409).json({
-
-          success: false,
-
-          error:
-            "Ye username already registered hai."
-
-        });
-
-      }
-
-
-      const user = {
-
-        id:
-          crypto.randomUUID(),
-
-        username,
-
-        passwordHash:
-          hashPassword(password),
-
-        chats: [],
-
-        createdAt:
-          new Date().toISOString()
-
-      };
-
-
-      users.push(user);
-
-      saveUsers(users);
-
-
-      const token =
-        createSession(
-          user.id
-        );
-
-
-      res.json({
-
-        success: true,
-
-        token,
-
-        user: {
-
-          id: user.id,
-
-          username:
-            user.username
-
+            return res.status(401).json({
+                success: false,
+                error: "Login required"
+            });
         }
 
-      });
+        req.userId =
+            auth.userId;
 
-    }
+        req.sessionId =
+            auth.sessionId;
 
-    catch (error) {
+        next();
 
-      console.error(
-        "SIGNUP ERROR:",
-        error
-      );
+    } catch (error) {
 
-      res.status(500).json({
-
-        success: false,
-
-        error:
-          "Signup failed"
-
-      });
-
-    }
-
-  }
-);
-
-
-/* =====================================================
-   LOGIN
-===================================================== */
-
-app.post(
-  "/api/login",
-  async (req, res) => {
-
-    try {
-
-      const username =
-        String(
-          req.body?.username || ""
-        ).trim();
-
-      const password =
-        String(
-          req.body?.password || ""
+        console.error(
+            "AUTH ERROR:",
+            error
         );
-
-
-      if (!username || !password) {
-
-        return res.status(400).json({
-
-          success: false,
-
-          error:
-            "Username aur password required hai."
-
-        });
-
-      }
-
-
-      const users =
-        loadUsers();
-
-
-      const user =
-        users.find(
-          item =>
-            item.username.toLowerCase() ===
-            username.toLowerCase()
-        );
-
-
-      if (
-        !user ||
-        !verifyPassword(
-          password,
-          user.passwordHash
-        )
-      ) {
 
         return res.status(401).json({
-
-          success: false,
-
-          error:
-            "Username ya password galat hai."
-
+            success: false,
+            error:
+                "Authentication failed"
         });
-
-      }
-
-
-      const token =
-        createSession(
-          user.id
-        );
-
-
-      res.json({
-
-        success: true,
-
-        token,
-
-        user: {
-
-          id: user.id,
-
-          username:
-            user.username
-
-        }
-
-      });
-
     }
-
-    catch (error) {
-
-      console.error(
-        "LOGIN ERROR:",
-        error
-      );
-
-      res.status(500).json({
-
-        success: false,
-
-        error:
-          "Login failed"
-
-      });
-
-    }
-
-  }
-);
-
-
-/* =====================================================
-   LOGOUT
-===================================================== */
-
-app.post(
-  "/api/logout",
-  requireAuth,
-  (req, res) => {
-
-    sessions.delete(
-      req.token
-    );
-
-    res.json({
-
-      success: true
-
-    });
-
-  }
-);
+}
 
 
 /* =====================================================
@@ -588,27 +230,30 @@ app.post(
 ===================================================== */
 
 app.get(
-  "/api/me",
-  requireAuth,
-  (req, res) => {
+    "/api/me",
+    requireAuth,
+    (req, res) => {
 
-    res.json({
+        const data =
+            loadData();
 
-      success: true,
+        if (
+            !data.users[req.userId]
+        ) {
 
-      user: {
+            data.users[req.userId] = {
+                chats: []
+            };
 
-        id:
-          req.user.id,
+            saveData(data);
+        }
 
-        username:
-          req.user.username
-
-      }
-
-    });
-
-  }
+        res.json({
+            success: true,
+            userId:
+                req.userId
+        });
+    }
 );
 
 
@@ -617,20 +262,29 @@ app.get(
 ===================================================== */
 
 app.get(
-  "/api/history",
-  requireAuth,
-  (req, res) => {
+    "/api/history",
+    requireAuth,
+    (req, res) => {
 
-    res.json({
+        const data =
+            loadData();
 
-      success: true,
+        const user =
+            data.users[req.userId];
 
-      chats:
-        req.user.chats || []
+        const chats =
+            user?.chats || [];
 
-    });
+        res.json({
+            success: true,
 
-  }
+            history:
+                chats,
+
+            chats:
+                chats
+        });
+    }
 );
 
 
@@ -639,133 +293,229 @@ app.get(
 ===================================================== */
 
 app.post(
-  "/api/history",
-  requireAuth,
-  (req, res) => {
+    "/api/history",
+    requireAuth,
+    (req, res) => {
 
-    try {
+        try {
 
-      const chats =
-        req.body?.chats;
+            const chats =
+                req.body?.chats;
 
+            if (
+                !Array.isArray(chats)
+            ) {
 
-      if (!Array.isArray(chats)) {
+                return res.status(400).json({
+                    success: false,
+                    error:
+                        "Invalid chat history"
+                });
+            }
 
-        return res.status(400).json({
+            const data =
+                loadData();
 
-          success: false,
+            if (
+                !data.users[req.userId]
+            ) {
 
-          error:
-            "Invalid chat history"
+                data.users[req.userId] = {
+                    chats: []
+                };
+            }
 
-        });
+            data.users[req.userId].chats =
+                chats
+                    .slice(0, 50)
+                    .map(chat => ({
 
-      }
+                        id:
+                            String(
+                                chat.id ||
+                                Date.now()
+                            ),
 
+                        title:
+                            String(
+                                chat.title ||
+                                "New Chat"
+                            ).slice(0, 100),
 
-      const users =
-        loadUsers();
+                        message:
+                            String(
+                                chat.message ||
+                                chat.title ||
+                                "New Chat"
+                            ).slice(0, 200),
 
+                        messages:
+                            Array.isArray(
+                                chat.messages
+                            )
+                                ? chat.messages
+                                    .slice(-100)
+                                    .map(message => ({
 
-      const userIndex =
-        users.findIndex(
-          user =>
-            user.id ===
-            req.user.id
-        );
+                                        role:
+                                            message.role === "user"
+                                                ? "user"
+                                                : "ai",
 
+                                        text:
+                                            String(
+                                                message.text ||
+                                                ""
+                                            ).slice(
+                                                0,
+                                                10000
+                                            )
+                                    }))
+                                : [],
 
-      if (userIndex === -1) {
+                        createdAt:
+                            chat.createdAt ||
+                            Date.now()
+                    }));
 
-        return res.status(404).json({
+            saveData(data);
 
-          success: false,
+            res.json({
+                success: true
+            });
 
-          error:
-            "User not found"
+        } catch (error) {
 
-        });
+            console.error(
+                "HISTORY SAVE ERROR:",
+                error
+            );
 
-      }
-
-
-      /*
-        Limit stored history
-      */
-
-      users[userIndex].chats =
-        chats
-          .slice(0, 50)
-          .map(chat => ({
-
-            id:
-              chat.id,
-
-            title:
-              String(
-                chat.title ||
-                "New Chat"
-              ).slice(0, 100),
-
-            messages:
-              Array.isArray(
-                chat.messages
-              )
-                ? chat.messages
-                    .slice(-100)
-                    .map(message => ({
-
-                      role:
-                        message.role === "user"
-                          ? "user"
-                          : "ai",
-
-                      text:
-                        String(
-                          message.text ||
-                          ""
-                        ).slice(
-                          0,
-                          10000
-                        )
-
-                    }))
-                : []
-
-          }));
-
-
-      saveUsers(users);
-
-
-      res.json({
-
-        success:
-          true
-
-      });
-
+            res.status(500).json({
+                success: false,
+                error:
+                    "History save failed"
+            });
+        }
     }
+);
 
-    catch (error) {
 
-      console.error(
-        "HISTORY SAVE ERROR:",
-        error
-      );
+/* =====================================================
+   DELETE ONE CHAT
+===================================================== */
 
-      res.status(500).json({
+app.delete(
+    "/api/history/:index",
+    requireAuth,
+    (req, res) => {
 
-        success: false,
+        try {
 
-        error:
-          "History save failed"
+            const index =
+                Number(
+                    req.params.index
+                );
 
-      });
+            const data =
+                loadData();
 
+            if (
+                !data.users[req.userId]
+            ) {
+
+                return res.json({
+                    success: true
+                });
+            }
+
+            const chats =
+                data.users[req.userId]
+                    .chats || [];
+
+            if (
+                Number.isInteger(index) &&
+                index >= 0 &&
+                index < chats.length
+            ) {
+
+                chats.splice(
+                    index,
+                    1
+                );
+            }
+
+            saveData(data);
+
+            res.json({
+                success: true
+            });
+
+        } catch (error) {
+
+            console.error(
+                "DELETE CHAT ERROR:",
+                error
+            );
+
+            res.status(500).json({
+                success: false,
+                error:
+                    "Chat delete failed"
+            });
+        }
     }
+);
 
-  }
+
+/* =====================================================
+   CLEAR HISTORY
+===================================================== */
+
+app.delete(
+    "/api/history",
+    requireAuth,
+    (req, res) => {
+
+        try {
+
+            const data =
+                loadData();
+
+            if (
+                !data.users[req.userId]
+            ) {
+
+                data.users[req.userId] = {
+                    chats: []
+                };
+
+            } else {
+
+                data.users[req.userId]
+                    .chats = [];
+            }
+
+            saveData(data);
+
+            res.json({
+                success: true
+            });
+
+        } catch (error) {
+
+            console.error(
+                "CLEAR HISTORY ERROR:",
+                error
+            );
+
+            res.status(500).json({
+                success: false,
+                error:
+                    "History clear failed"
+            });
+        }
+    }
 );
 
 
@@ -774,198 +524,259 @@ app.post(
 ===================================================== */
 
 async function askOpenRouter(
-  message
+    message
 ) {
 
-  if (
-    !process.env.OPENROUTER_API_KEY
-  ) {
+    const apiKey =
+        process.env.OPENROUTER_API_KEY;
 
-    throw new Error(
-      "OPENROUTER_API_KEY missing in .env"
-    );
+    if (!apiKey) {
 
-  }
+        throw new Error(
+            "OPENROUTER_API_KEY missing in .env"
+        );
+    }
 
+    const response =
+        await fetch(
+            "https://openrouter.ai/api/v1/chat/completions",
+            {
+                method: "POST",
 
-  const response =
-    await fetch(
-      "https://openrouter.ai/api/v1/chat/completions",
-      {
+                headers: {
 
-        method:
-          "POST",
+                    "Authorization":
+                        "Bearer " + apiKey,
 
-        headers: {
+                    "Content-Type":
+                        "application/json",
 
-          Authorization:
-            `Bearer ${process.env.OPENROUTER_API_KEY}`,
+                    "HTTP-Referer":
+                        `http://localhost:${PORT}`,
 
-          "Content-Type":
-            "application/json",
+                    "X-Title":
+                        "Novex AI"
+                },
 
-          "HTTP-Referer":
-            "http://localhost:3000",
+                body:
+                    JSON.stringify({
 
-          "X-Title":
-            "Novex AI"
+                        model:
+                            "openrouter/free",
 
-        },
+                        messages: [
 
-        body:
-          JSON.stringify({
+                            {
+                                role:
+                                    "system",
 
-            model:
-              "openrouter/free",
+                                content:
+`You are Novex AI.
 
-            messages: [
+Answer the exact question first.
 
-              {
+Use Hindi/Hinglish when appropriate.
 
-                role:
-                  "system",
+Simple questions:
+1-3 sentences.
 
-                content: `
-You are Novex AI.
+Normal questions:
+2-6 sentences.
 
-Give useful, accurate and concise answers.
+Coding:
+Give practical working code.
 
-Rules:
-- Answer the exact question first.
-- Simple question: 1-3 sentences.
-- Normal question: 2-6 sentences.
-- Do not repeat the question.
-- Avoid unnecessary introductions.
-- Use Hindi/Hinglish when appropriate.
-- For coding, give practical code and short explanation.
-- For maths, show necessary steps only.
-- For study, make answers exam-friendly.
-- Only be detailed when the user asks for detail.
-`
+Math:
+Show only necessary steps.
 
-              },
+Study:
+Make answers exam-friendly.
 
-              {
+Do not unnecessarily repeat the question.`
+                            },
 
-                role:
-                  "user",
+                            {
+                                role:
+                                    "user",
 
-                content:
-                  message
+                                content:
+                                    message
+                            }
+                        ],
 
-              }
+                        max_tokens:
+                            600,
 
-            ],
+                        temperature:
+                            0.4
+                    })
+            }
+        );
 
-            max_tokens:
-              600,
+    let data = {};
 
-            temperature:
-              0.4
+    try {
 
-          })
+        data =
+            await response.json();
 
-      }
-    );
+    } catch (error) {
 
+        throw new Error(
+            "OpenRouter returned invalid JSON."
+        );
+    }
 
-  const data =
-    await response.json();
+    if (!response.ok) {
 
+        console.error(
+            "OPENROUTER ERROR:",
+            data
+        );
 
-  if (!response.ok) {
+        throw new Error(
+            data?.error?.message ||
+            `OpenRouter HTTP ${response.status}`
+        );
+    }
 
-    throw new Error(
+    const answer =
+        data?.choices?.[0]
+            ?.message?.content;
 
-      data?.error?.message ||
-      "OpenRouter request failed"
+    if (!answer) {
 
-    );
+        throw new Error(
+            "OpenRouter ne answer nahi diya."
+        );
+    }
 
-  }
-
-
-  return (
-    data?.choices?.[0]?.message?.content ||
-    "AI ने कोई response नहीं दिया।"
-  );
-
+    return answer;
 }
 
 
 /* =====================================================
-   CHAT API
+   CHAT
 ===================================================== */
 
 app.post(
-  "/api/chat",
-  requireAuth,
-  async (req, res) => {
+    "/api/chat",
+    requireAuth,
+    async (req, res) => {
 
-    try {
+        try {
 
-      const message =
-        String(
-          req.body?.message ||
-          ""
-        ).trim();
+            const message =
+                String(
+                    req.body?.message ||
+                    ""
+                ).trim();
 
+            if (!message) {
 
-      if (!message) {
+                return res.status(400).json({
+                    success: false,
+                    error:
+                        "Message required"
+                });
+            }
 
-        return res.status(400).json({
+            console.log(
+                "CHAT:",
+                req.userId,
+                message
+            );
 
-          success: false,
+            const answer =
+                await askOpenRouter(
+                    message
+                );
 
-          error:
-            "Message required"
+            /* Save chat */
 
-        });
+            const data =
+                loadData();
 
-      }
+            if (
+                !data.users[req.userId]
+            ) {
 
+                data.users[req.userId] = {
+                    chats: []
+                };
+            }
 
-      const answer =
-        await askOpenRouter(
-          message
-        );
+            const chats =
+                data.users[req.userId]
+                    .chats || [];
 
+            chats.unshift({
 
-      res.json({
+                id:
+                    Date.now().toString(),
 
-        success:
-          true,
+                title:
+                    message.slice(0, 100),
 
-        answer,
+                message:
+                    message.slice(0, 200),
 
-        provider:
-          "openrouter"
+                messages: [
 
-      });
+                    {
+                        role:
+                            "user",
 
+                        text:
+                            message
+                    },
+
+                    {
+                        role:
+                            "ai",
+
+                        text:
+                            answer
+                    }
+                ],
+
+                createdAt:
+                    Date.now()
+            });
+
+            data.users[req.userId]
+                .chats =
+                chats.slice(0, 50);
+
+            saveData(data);
+
+            res.json({
+                success: true,
+
+                answer:
+
+                    answer,
+
+                provider:
+                    "openrouter"
+            });
+
+        } catch (error) {
+
+            console.error(
+                "CHAT ERROR:",
+                error
+            );
+
+            res.status(500).json({
+                success: false,
+
+                error:
+                    error.message ||
+                    "AI request failed"
+            });
+        }
     }
-
-    catch (error) {
-
-      console.error(
-        "CHAT ERROR:",
-        error
-      );
-
-      res.status(500).json({
-
-        success:
-          false,
-
-        error:
-          error.message ||
-          "AI request failed"
-
-      });
-
-    }
-
-  }
 );
 
 
@@ -974,143 +785,108 @@ app.post(
 ===================================================== */
 
 async function performWebSearch(
-  query
+    query
 ) {
 
-  const url =
-    "https://html.duckduckgo.com/html/?q=" +
-    encodeURIComponent(query) +
-    "&kl=in-en&kp=1";
+    const url =
+        "https://html.duckduckgo.com/html/?q=" +
+        encodeURIComponent(query) +
+        "&kl=in-en&kp=1";
 
+    const response =
+        await fetch(
+            url,
+            {
+                headers: {
 
-  const response =
-    await fetch(
-      url,
-      {
+                    "User-Agent":
+                        "Mozilla/5.0",
 
-        headers: {
+                    "Accept-Language":
+                        "en-IN,en;q=0.9,hi;q=0.8"
+                }
+            }
+        );
 
-          "User-Agent":
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/131 Safari/537.36",
+    if (!response.ok) {
 
-          "Accept-Language":
-            "en-IN,en;q=0.9,hi;q=0.8"
-
-        }
-
-      }
-    );
-
-
-  if (!response.ok) {
-
-    throw new Error(
-      `Web search failed (${response.status})`
-    );
-
-  }
-
-
-  const html =
-    await response.text();
-
-
-  const results = [];
-
-
-  const regex =
-    /<a[^>]+class="result__a"[^>]+href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/gi;
-
-
-  let match;
-
-
-  while (
-    (match = regex.exec(html)) &&
-    results.length < 8
-  ) {
-
-    const title =
-      cleanHTMLText(
-        match[2]
-      );
-
-
-    let resultUrl =
-      match[1];
-
-
-    try {
-
-      if (
-        resultUrl.startsWith("/l/?")
-      ) {
-
-        const parsed =
-          new URL(
-            "https://duckduckgo.com" +
-            resultUrl
-          );
-
-
-        const realUrl =
-          parsed.searchParams.get(
-            "uddg"
-          );
-
-
-        if (realUrl) {
-
-          resultUrl =
-            realUrl;
-
-        }
-
-      }
-
+        throw new Error(
+            `Web search failed (${response.status})`
+        );
     }
 
-    catch {
+    const html =
+        await response.text();
 
-      /* Keep original URL */
+    const results = [];
 
-    }
+    const regex =
+        /<a[^>]*class="[^"]*result__a[^"]*"[^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/gi;
 
+    let match;
 
-    if (
-      title &&
-      resultUrl
+    while (
+        (match =
+            regex.exec(html)) &&
+        results.length < 8
     ) {
 
-      results.push({
+        const title =
+            cleanHTMLText(
+                match[2]
+            );
 
-        title,
+        let resultUrl =
+            match[1];
 
-        url:
-          resultUrl,
+        try {
 
-        snippet:
-          ""
+            const parsed =
+                new URL(
+                    resultUrl,
+                    "https://duckduckgo.com"
+                );
 
-      });
+            const realUrl =
+                parsed.searchParams.get(
+                    "uddg"
+                );
 
+            if (realUrl) {
+                resultUrl =
+                    realUrl;
+            }
+
+        } catch (_) {}
+
+        if (
+            title &&
+            resultUrl
+        ) {
+
+            results.push({
+
+                title,
+
+                url:
+                    resultUrl,
+
+                snippet:
+                    ""
+            });
+        }
     }
 
-  }
+    return {
 
+        query,
 
-  return {
+        results,
 
-    query,
-
-    results,
-
-    searchUrl:
-      "https://duckduckgo.com/?q=" +
-      encodeURIComponent(query)
-
-  };
-
+        searchUrl:
+            "https://duckduckgo.com/?q=" +
+            encodeURIComponent(query)
+    };
 }
 
 
@@ -1118,152 +894,134 @@ async function performWebSearch(
    AI SEARCH
 ===================================================== */
 
-app.get(
-  "/api/search-ai",
-  requireAuth,
-  async (req, res) => {
+app.post(
+    "/api/search-ai",
+    requireAuth,
+    async (req, res) => {
 
-    try {
+        try {
 
-      const query =
-        String(
-          req.query.q ||
-          ""
-        ).trim();
+            const query =
+                String(
+                    req.body?.message ||
+                    req.body?.q ||
+                    ""
+                ).trim();
 
+            if (!query) {
 
-      if (!query) {
+                return res.status(400).json({
+                    success: false,
+                    error:
+                        "Search query required"
+                });
+            }
 
-        return res.status(400).json({
+            const searchData =
+                await performWebSearch(
+                    query
+                );
 
-          success: false,
+            const sourceText =
+                searchData.results
+                    .map(
+                        (item, index) =>
+                            `${index + 1}. ${item.title}\nURL: ${item.url}`
+                    )
+                    .join("\n\n");
 
-          error:
-            "Search query required"
+            const prompt =
+`You are Novex AI's current-information assistant.
 
-        });
-
-      }
-
-
-      const searchData =
-        await performWebSearch(
-          query
-        );
-
-
-      const sourceText =
-        searchData.results
-          .map(
-            (item, index) =>
-              `${index + 1}. ${item.title}
-URL: ${item.url}`
-          )
-          .join(
-            "\n\n"
-          );
-
-
-      const prompt = `
-
-You are Novex AI's CURRENT INFORMATION assistant.
-
-USER QUESTION:
+User question:
 ${query}
 
-SEARCH RESULTS:
+Search results:
 ${sourceText}
 
-Answer using only these search results.
+Use only these results.
 
 Rules:
-- Keep answer short and direct.
-- Usually 2-5 sentences.
 - Do not invent facts.
-- Prefer recent information.
+- Keep the answer direct.
 - Mention dates when available.
-- If results are insufficient, say so.
-- Answer in Hindi/Hinglish when appropriate.
-`;
+- Answer in Hindi/Hinglish when appropriate.`;
 
+            const answer =
+                await askOpenRouter(
+                    prompt
+                );
 
-      const summary =
-        await askOpenRouter(
-          prompt
-        );
+            res.json({
 
+                success:
+                    true,
 
-      res.json({
+                query,
 
-        success:
-          true,
+                answer,
 
-        query,
+                reply:
+                    answer,
 
-        summary,
+                summary:
+                    answer,
 
-        results:
-          searchData.results,
+                results:
+                    searchData.results,
 
-        searchUrl:
-          searchData.searchUrl,
+                searchUrl:
+                    searchData.searchUrl
+            });
 
-        provider:
-          "openrouter"
+        } catch (error) {
 
-      });
+            console.error(
+                "SEARCH ERROR:",
+                error
+            );
 
+            res.status(500).json({
+
+                success:
+                    false,
+
+                error:
+                    error.message ||
+                    "AI search failed"
+            });
+        }
     }
-
-    catch (error) {
-
-      console.error(
-        "SEARCH AI ERROR:",
-        error
-      );
-
-
-      res.status(500).json({
-
-        success:
-          false,
-
-        error:
-          error.message ||
-          "AI search failed"
-
-      });
-
-    }
-
-  }
 );
 
 
 /* =====================================================
-   HEALTH
+   STATUS
 ===================================================== */
 
 app.get(
-  "/api/status",
-  (req, res) => {
+    "/api/status",
+    (req, res) => {
 
-    res.json({
+        res.json({
 
-      success:
-        true,
+            success:
+                true,
 
-      app:
-        "Novex AI",
+            app:
+                "Novex AI",
 
-      ai:
-        Boolean(
-          process.env.OPENROUTER_API_KEY
-        )
+            clerk:
+                Boolean(
+                    process.env.CLERK_SECRET_KEY
+                ),
 
-    });
-
-  }
+            openrouter:
+                Boolean(
+                    process.env.OPENROUTER_API_KEY
+                )
+        });
+    }
 );
 
 
@@ -1272,62 +1030,77 @@ app.get(
 ===================================================== */
 
 function cleanHTMLText(
-  text
+    text
 ) {
 
-  return String(text)
+    return String(text)
 
-    .replace(
-      /<[^>]*>/g,
-      ""
-    )
+        .replace(
+            /<[^>]*>/g,
+            ""
+        )
 
-    .replace(
-      /&amp;/g,
-      "&"
-    )
+        .replace(
+            /&amp;/g,
+            "&"
+        )
 
-    .replace(
-      /&quot;/g,
-      '"'
-    )
+        .replace(
+            /&quot;/g,
+            '"'
+        )
 
-    .replace(
-      /&#x27;/g,
-      "'"
-    )
+        .replace(
+            /&#x27;/g,
+            "'"
+        )
 
-    .replace(
-      /&#39;/g,
-      "'"
-    )
+        .replace(
+            /&#39;/g,
+            "'"
+        )
 
-    .replace(
-      /&lt;/g,
-      "<"
-    )
+        .replace(
+            /&lt;/g,
+            "<"
+        )
 
-    .replace(
-      /&gt;/g,
-      ">"
-    )
+        .replace(
+            /&gt;/g,
+            ">"
+        )
 
-    .trim();
-
+        .trim();
 }
 
 
 /* =====================================================
-   SERVER
+   START SERVER
 ===================================================== */
 
 app.listen(
-  PORT,
-  () => {
+    PORT,
+    () => {
 
-    console.log(
-      `Novex AI running at http://localhost:${PORT}`
-    );
-
-  }
+        console.log("");
+        console.log(
+            "===================================="
+        );
+        console.log(
+            "🚀 NOVEX AI SERVER RUNNING"
+        );
+        console.log(
+            `🌐 http://localhost:${PORT}`
+        );
+        console.log(
+            "🔐 CLERK AUTH ENABLED"
+        );
+        console.log(
+            "🤖 OPENROUTER ENABLED"
+        );
+        console.log(
+            "===================================="
+        );
+        console.log("");
+    }
 );

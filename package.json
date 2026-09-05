@@ -1,5 +1,6 @@
 {
   "dependencies": {
+    "@clerk/express": "^2.1.66",
     "@google/genai": "^2.21.0",
     "cors": "^2.8.6",
     "dotenv": "^17.4.2",

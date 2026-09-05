@@ -1,19 +1,28 @@
-
+````javascript
 /* =========================================================
    NOVEX AI — COMPLETE SCRIPT
    Clerk + Chat + History + Image + Website + Search
+   + PDF / FILE ATTACHMENT UI
    ========================================================= */
 
 (() => {
   "use strict";
+
+  /* =========================================================
+     GLOBAL STATE
+     ========================================================= */
 
   let clerkReady = false;
   let appStarted = false;
   let loginMounted = false;
   let loginWatcherStarted = false;
 
+  let selectedFile = null;
+  let isSending = false;
+
   const sleep = (ms) =>
     new Promise((resolve) => setTimeout(resolve, ms));
+
 
   /* =========================================================
      START
@@ -22,7 +31,13 @@
   document.addEventListener("DOMContentLoaded", () => {
     initializeNovex();
     loadTheme();
+    setupFileAttachment();
   });
+
+
+  /* =========================================================
+     CLERK INITIALIZATION
+     ========================================================= */
 
   async function initializeNovex() {
     try {
@@ -38,20 +53,23 @@
         return;
       }
 
-      /*
-        index.html Clerk UI bundle ko load karke:
-        window.__novexClerkReady = true
-        set karega.
-      */
-
-      while (!window.__novexClerkReady && attempts < 300) {
+      while (
+        !window.__novexClerkReady &&
+        attempts < 300
+      ) {
         await sleep(100);
         attempts++;
       }
 
       if (!window.__novexClerkReady) {
-        console.error("NOVEX: Clerk UI initialization timeout.");
-        showLoginError("Login system start nahi ho paya.");
+        console.error(
+          "NOVEX: Clerk UI initialization timeout."
+        );
+
+        showLoginError(
+          "Login system start nahi ho paya."
+        );
+
         return;
       }
 
@@ -68,17 +86,27 @@
       setupClerkListener();
 
     } catch (error) {
-      console.error("Clerk initialization error:", error);
-      showLoginError("Login system start nahi ho paya.");
+      console.error(
+        "Clerk initialization error:",
+        error
+      );
+
+      showLoginError(
+        "Login system start nahi ho paya."
+      );
     }
   }
+
 
   /* =========================================================
      CLERK SESSION LISTENER
      ========================================================= */
 
   function setupClerkListener() {
-    if (!window.Clerk || typeof window.Clerk.addListener !== "function") {
+    if (
+      !window.Clerk ||
+      typeof window.Clerk.addListener !== "function"
+    ) {
       return;
     }
 
@@ -93,21 +121,32 @@
           showLogin();
         }
       } catch (error) {
-        console.error("Clerk listener error:", error);
+        console.error(
+          "Clerk listener error:",
+          error
+        );
       }
     });
   }
+
 
   /* =========================================================
      LOGIN
      ========================================================= */
 
   function showLogin() {
-    const authScreen = document.getElementById("authScreen");
-    const app = document.getElementById("app");
-    const signIn = document.getElementById("clerkSignIn");
+    const authScreen =
+      document.getElementById("authScreen");
 
-    if (!authScreen || !signIn) return;
+    const app =
+      document.getElementById("app");
+
+    const signIn =
+      document.getElementById("clerkSignIn");
+
+    if (!authScreen || !signIn) {
+      return;
+    }
 
     authScreen.classList.remove("hidden");
 
@@ -123,10 +162,15 @@
 
         loginMounted = true;
 
-        console.log("NOVEX: Clerk SignIn mounted.");
+        console.log(
+          "NOVEX: Clerk SignIn mounted."
+        );
 
       } catch (error) {
-        console.error("Clerk SignIn error:", error);
+        console.error(
+          "Clerk SignIn error:",
+          error
+        );
 
         loginMounted = false;
 
@@ -139,8 +183,11 @@
     watchLogin();
   }
 
+
   function watchLogin() {
-    if (loginWatcherStarted) return;
+    if (loginWatcherStarted) {
+      return;
+    }
 
     loginWatcherStarted = true;
 
@@ -160,12 +207,16 @@
     check();
   }
 
+
   /* =========================================================
      OPEN APP
      ========================================================= */
 
   async function openNovexApp() {
-    if (!window.Clerk || !window.Clerk.isSignedIn) {
+    if (
+      !window.Clerk ||
+      !window.Clerk.isSignedIn
+    ) {
       showLogin();
       return;
     }
@@ -176,8 +227,11 @@
 
     appStarted = true;
 
-    const authScreen = document.getElementById("authScreen");
-    const app = document.getElementById("app");
+    const authScreen =
+      document.getElementById("authScreen");
+
+    const app =
+      document.getElementById("app");
 
     if (authScreen) {
       authScreen.classList.add("hidden");
@@ -192,12 +246,18 @@
       await loadHistory();
       setupAppEvents();
 
-      console.log("NOVEX: App started successfully.");
+      console.log(
+        "NOVEX: App started successfully."
+      );
 
     } catch (error) {
-      console.error("App startup error:", error);
+      console.error(
+        "App startup error:",
+        error
+      );
     }
   }
+
 
   /* =========================================================
      USER
@@ -205,13 +265,15 @@
 
   async function setupUser() {
     try {
-      const response = await authFetch("/api/me");
+      const response =
+        await authFetch("/api/me");
 
       if (!response.ok) {
         throw new Error("User API failed");
       }
 
-      const data = await response.json();
+      const data =
+        await response.json();
 
       const username =
         data?.user?.username ||
@@ -220,31 +282,45 @@
         "User";
 
       const loggedUsername =
-        document.getElementById("loggedUsername");
+        document.getElementById(
+          "loggedUsername"
+        );
 
       if (loggedUsername) {
-        loggedUsername.textContent = username;
+        loggedUsername.textContent =
+          username;
       }
 
       const avatar =
-        document.getElementById("userAvatar");
+        document.getElementById(
+          "userAvatar"
+        );
 
       if (avatar) {
         avatar.textContent =
-          username.charAt(0).toUpperCase();
+          String(username)
+            .charAt(0)
+            .toUpperCase();
       }
 
     } catch (error) {
-      console.error("setupUser error:", error);
+      console.error(
+        "setupUser error:",
+        error
+      );
 
       const loggedUsername =
-        document.getElementById("loggedUsername");
+        document.getElementById(
+          "loggedUsername"
+        );
 
       if (loggedUsername) {
-        loggedUsername.textContent = "User";
+        loggedUsername.textContent =
+          "User";
       }
     }
   }
+
 
   /* =========================================================
      AUTH FETCH
@@ -255,7 +331,8 @@
       if (
         !window.Clerk ||
         !window.Clerk.session ||
-        typeof window.Clerk.session.getToken !== "function"
+        typeof window.Clerk.session.getToken !==
+          "function"
       ) {
         return null;
       }
@@ -263,27 +340,38 @@
       return await window.Clerk.session.getToken();
 
     } catch (error) {
-      console.error("Token error:", error);
+      console.error(
+        "Token error:",
+        error
+      );
+
       return null;
     }
   }
 
-  async function authFetch(url, options = {}) {
-    const token = await getAuthToken();
+
+  async function authFetch(
+    url,
+    options = {}
+  ) {
+    const token =
+      await getAuthToken();
 
     const headers = {
       ...(options.headers || {})
     };
 
     if (token) {
-      headers.Authorization = `Bearer ${token}`;
+      headers.Authorization =
+        `Bearer ${token}`;
     }
 
     if (
       options.body &&
       !headers["Content-Type"]
     ) {
-      headers["Content-Type"] = "application/json";
+      headers["Content-Type"] =
+        "application/json";
     }
 
     return fetch(url, {
@@ -293,44 +381,103 @@
     });
   }
 
+
   /* =========================================================
      CHAT
      ========================================================= */
 
   async function sendMessage() {
     const input =
-      document.getElementById("messageInput") ||
-      document.getElementById("userInput");
+      document.getElementById(
+        "messageInput"
+      ) ||
+      document.getElementById(
+        "userInput"
+      );
 
-    if (!input) return;
+    if (!input) {
+      return;
+    }
 
-    const message = input.value.trim();
+    if (isSending) {
+      return;
+    }
 
-    if (!message) return;
+    const message =
+      input.value.trim();
+
+    /*
+      File selected but no message:
+      allow sending a simple attachment
+      message for now.
+    */
+
+    if (
+      !message &&
+      !selectedFile
+    ) {
+      return;
+    }
+
+    isSending = true;
+
+    const fileAtSendTime =
+      selectedFile;
 
     input.value = "";
 
     autoResize(input);
 
-    addMessage(message, "user");
+    /*
+      Current backend accepts text only.
+      Attachment UI is prepared here.
+    */
+
+    let displayMessage =
+      message;
+
+    if (fileAtSendTime) {
+      displayMessage =
+        message
+          ? `${message}\n\n📎 ${fileAtSendTime.name}`
+          : `📎 ${fileAtSendTime.name}`;
+    }
+
+    addMessage(
+      displayMessage,
+      "user"
+    );
 
     showTyping();
 
     try {
-      const response = await authFetch("/api/chat", {
-        method: "POST",
-        body: JSON.stringify({
-          message
-        })
-      });
+      /*
+        IMPORTANT:
+        Existing /api/chat contract
+        remains unchanged.
+      */
+
+      const response =
+        await authFetch(
+          "/api/chat",
+          {
+            method: "POST",
+            body: JSON.stringify({
+              message
+            })
+          }
+        );
 
       hideTyping();
 
       if (!response.ok) {
-        throw new Error("AI request failed");
+        throw new Error(
+          `AI request failed: ${response.status}`
+        );
       }
 
-      const data = await response.json();
+      const data =
+        await response.json();
 
       const answer =
         data.reply ||
@@ -338,40 +485,74 @@
         data.response ||
         "Sorry, mujhe response nahi mila.";
 
-      addMessage(answer, "ai");
+      addMessage(
+        answer,
+        "ai"
+      );
 
       await loadHistory();
+
+      /*
+        Remove attachment after
+        successful send.
+      */
+
+      if (fileAtSendTime) {
+        clearSelectedFile();
+      }
 
     } catch (error) {
       hideTyping();
 
-      console.error("Chat error:", error);
+      console.error(
+        "Chat error:",
+        error
+      );
 
       addMessage(
         "⚠️ AI response nahi aa raha. Thodi der baad dobara try karo.",
         "ai"
       );
 
-      showToast("AI request failed");
+      showToast(
+        "AI request failed"
+      );
+
+    } finally {
+      isSending = false;
     }
   }
 
+
+  /* =========================================================
+     ASK AI
+     ========================================================= */
+
   async function askAI(message) {
-    if (!message) return "";
+    if (!message) {
+      return "";
+    }
 
     try {
-      const response = await authFetch("/api/chat", {
-        method: "POST",
-        body: JSON.stringify({
-          message
-        })
-      });
+      const response =
+        await authFetch(
+          "/api/chat",
+          {
+            method: "POST",
+            body: JSON.stringify({
+              message
+            })
+          }
+        );
 
       if (!response.ok) {
-        throw new Error("AI request failed");
+        throw new Error(
+          "AI request failed"
+        );
       }
 
-      const data = await response.json();
+      const data =
+        await response.json();
 
       return (
         data.reply ||
@@ -381,55 +562,124 @@
       );
 
     } catch (error) {
-      console.error("askAI error:", error);
+      console.error(
+        "askAI error:",
+        error
+      );
+
       return "";
     }
   }
+
 
   /* =========================================================
      MESSAGE UI
      ========================================================= */
 
-  function addMessage(text, type = "ai") {
+  function addMessage(
+    text,
+    type = "ai"
+  ) {
     const messages =
-      document.getElementById("messages");
+      document.getElementById(
+        "messages"
+      );
 
-    if (!messages) return;
+    if (!messages) {
+      return;
+    }
+
+    const welcome =
+      document.getElementById(
+        "welcomeScreen"
+      );
+
+    if (welcome) {
+      welcome.classList.add(
+        "hidden"
+      );
+    }
 
     const messageDiv =
-      document.createElement("div");
+      document.createElement(
+        "div"
+      );
 
     messageDiv.className =
-      `message ${type === "user" ? "user-message" : "ai-message"}`;
+      `message ${
+        type === "user"
+          ? "user"
+          : "ai"
+      }`;
 
     const content =
-      document.createElement("div");
+      document.createElement(
+        "div"
+      );
 
-    content.className = "message-content";
+    content.className =
+      "message-content";
 
-    content.innerHTML = formatAIText(text);
+    content.innerHTML =
+      formatAIText(text);
 
-    messageDiv.appendChild(content);
+    messageDiv.appendChild(
+      content
+    );
 
-    messages.appendChild(messageDiv);
+    messages.appendChild(
+      messageDiv
+    );
 
-    messages.scrollTop = messages.scrollHeight;
+    messages.scrollTop =
+      messages.scrollHeight;
   }
 
-  function formatAIText(text) {
-    if (!text) return "";
 
-    let safe = escapeHTML(String(text));
+  /* =========================================================
+     FORMAT AI TEXT
+     ========================================================= */
+
+  function formatAIText(text) {
+    if (!text) {
+      return "";
+    }
+
+    let safe =
+      escapeHTML(
+        String(text)
+      );
+
+    /*
+      Code blocks
+    */
 
     safe = safe.replace(
       /```([\s\S]*?)```/g,
       "<pre><code>$1</code></pre>"
     );
 
+    /*
+      Bold text
+    */
+
     safe = safe.replace(
       /\*\*(.*?)\*\*/g,
       "<strong>$1</strong>"
     );
+
+    /*
+      Inline code
+    */
+
+    safe = safe.replace(
+      /`([^`]+)`/g,
+      "<code>$1</code>"
+    );
+
+    /*
+      New lines
+    */
 
     safe = safe.replace(
       /\n/g,
@@ -439,11 +689,19 @@
     return safe;
   }
 
+
   function escapeHTML(text) {
-    const div = document.createElement("div");
-    div.textContent = text;
+    const div =
+      document.createElement(
+        "div"
+      );
+
+    div.textContent =
+      text;
+
     return div.innerHTML;
   }
+
 
   /* =========================================================
      TYPING
@@ -453,15 +711,24 @@
     hideTyping();
 
     const messages =
-      document.getElementById("messages");
+      document.getElementById(
+        "messages"
+      );
 
-    if (!messages) return;
+    if (!messages) {
+      return;
+    }
 
     const typing =
-      document.createElement("div");
+      document.createElement(
+        "div"
+      );
 
-    typing.id = "novexTyping";
-    typing.className = "message ai-message";
+    typing.id =
+      "novexTyping";
+
+    typing.className =
+      "message ai";
 
     typing.innerHTML = `
       <div class="message-content">
@@ -471,19 +738,26 @@
       </div>
     `;
 
-    messages.appendChild(typing);
+    messages.appendChild(
+      typing
+    );
 
-    messages.scrollTop = messages.scrollHeight;
+    messages.scrollTop =
+      messages.scrollHeight;
   }
+
 
   function hideTyping() {
     const typing =
-      document.getElementById("novexTyping");
+      document.getElementById(
+        "novexTyping"
+      );
 
     if (typing) {
       typing.remove();
     }
   }
+
 
   /* =========================================================
      HISTORY
@@ -491,149 +765,270 @@
 
   async function loadHistory() {
     const historyList =
-      document.getElementById("historyList");
+      document.getElementById(
+        "historyList"
+      );
 
-    if (!historyList) return;
+    if (!historyList) {
+      return;
+    }
 
     try {
       const response =
-        await authFetch("/api/history");
+        await authFetch(
+          "/api/history"
+        );
 
-      if (!response.ok) return;
+      if (!response.ok) {
+        return;
+      }
 
-      const data = await response.json();
+      const data =
+        await response.json();
 
       const history =
         Array.isArray(data)
           ? data
           : data.history || [];
 
-      historyList.innerHTML = "";
+      historyList.innerHTML =
+        "";
 
-      history.forEach((item, index) => {
-        const title =
-          item.title ||
-          item.message ||
-          item.prompt ||
-          "New Chat";
+      history.forEach(
+        (item, index) => {
+          const title =
+            item.title ||
+            item.message ||
+            item.prompt ||
+            "New Chat";
 
-        const div =
-          document.createElement("div");
+          const div =
+            document.createElement(
+              "div"
+            );
 
-        div.className = "history-item";
+          div.className =
+            "history-item";
 
-        div.innerHTML = `
-          <span>${escapeHTML(
-            String(title).slice(0, 40)
-          )}</span>
-          <button
-            class="history-delete"
-            data-index="${index}">
-            ×
-          </button>
-        `;
+          div.innerHTML = `
+            <span>
+              ${escapeHTML(
+                String(title)
+                  .slice(0, 40)
+              )}
+            </span>
 
-        div.addEventListener("click", (event) => {
-          if (
-            event.target.classList.contains(
-              "history-delete"
-            )
-          ) {
-            return;
-          }
+            <button
+              class="history-delete"
+              data-index="${index}"
+              type="button"
+              title="Delete chat"
+              aria-label="Delete chat"
+            >
+              ×
+            </button>
+          `;
 
-          restoreHistoryItem(item);
-        });
-
-        const deleteButton =
-          div.querySelector(".history-delete");
-
-        if (deleteButton) {
-          deleteButton.addEventListener(
+          div.addEventListener(
             "click",
-            async (event) => {
-              event.stopPropagation();
+            (event) => {
+              if (
+                event.target.classList.contains(
+                  "history-delete"
+                )
+              ) {
+                return;
+              }
 
-              await deleteHistory(index);
+              restoreHistoryItem(
+                item
+              );
             }
           );
-        }
 
-        historyList.appendChild(div);
-      });
+          const deleteButton =
+            div.querySelector(
+              ".history-delete"
+            );
+
+          if (deleteButton) {
+            deleteButton.addEventListener(
+              "click",
+              async (event) => {
+                event.stopPropagation();
+
+                await deleteHistory(
+                  index
+                );
+              }
+            );
+          }
+
+          historyList.appendChild(
+            div
+          );
+        }
+      );
 
     } catch (error) {
-      console.error("History error:", error);
+      console.error(
+        "History error:",
+        error
+      );
     }
   }
 
-  function restoreHistoryItem(item) {
-    const messages =
-      document.getElementById("messages");
 
-    if (!messages) return;
+  function restoreHistoryItem(
+    item
+  ) {
+    const messages =
+      document.getElementById(
+        "messages"
+      );
+
+    if (!messages) {
+      return;
+    }
 
     messages.innerHTML = "";
 
+    const welcome =
+      document.getElementById(
+        "welcomeScreen"
+      );
+
+    if (welcome) {
+      welcome.classList.add(
+        "hidden"
+      );
+    }
+
     if (item.message) {
-      addMessage(item.message, "user");
+      addMessage(
+        item.message,
+        "user"
+      );
     }
 
     if (item.reply) {
-      addMessage(item.reply, "ai");
-    } else if (item.response) {
-      addMessage(item.response, "ai");
+      addMessage(
+        item.reply,
+        "ai"
+      );
+    } else if (
+      item.response
+    ) {
+      addMessage(
+        item.response,
+        "ai"
+      );
     }
   }
 
-  async function deleteHistory(index) {
+
+  /* =========================================================
+     DELETE HISTORY
+     ========================================================= */
+
+  async function deleteHistory(
+    index
+  ) {
     try {
       const response =
-        await authFetch(`/api/history/${index}`, {
-          method: "DELETE"
-        });
+        await authFetch(
+          `/api/history/${index}`,
+          {
+            method: "DELETE"
+          }
+        );
 
       if (!response.ok) {
-        throw new Error("Delete failed");
+        throw new Error(
+          "Delete failed"
+        );
       }
 
       await loadHistory();
 
-      showToast("Chat deleted");
+      showToast(
+        "Chat deleted"
+      );
 
     } catch (error) {
-      console.error("Delete history error:", error);
-      showToast("Delete failed");
+      console.error(
+        "Delete history error:",
+        error
+      );
+
+      showToast(
+        "Delete failed"
+      );
     }
   }
+
+
+  /* =========================================================
+     CLEAR ALL
+     ========================================================= */
 
   async function clearHistory() {
     try {
       const response =
-        await authFetch("/api/history", {
-          method: "DELETE"
-        });
+        await authFetch(
+          "/api/history",
+          {
+            method: "DELETE"
+          }
+        );
 
       if (!response.ok) {
-        throw new Error("Clear failed");
+        throw new Error(
+          "Clear failed"
+        );
       }
 
       const messages =
-        document.getElementById("messages");
+        document.getElementById(
+          "messages"
+        );
 
       if (messages) {
-        messages.innerHTML = "";
+        messages.innerHTML =
+          "";
       }
+
+      const welcome =
+        document.getElementById(
+          "welcomeScreen"
+        );
+
+      if (welcome) {
+        welcome.classList.remove(
+          "hidden"
+        );
+      }
+
+      hideSpecialAreas();
 
       await loadHistory();
 
-      showToast("History cleared");
+      showToast(
+        "All history cleared"
+      );
 
     } catch (error) {
-      console.error("Clear history error:", error);
-      showToast("History clear nahi hua");
+      console.error(
+        "Clear history error:",
+        error
+      );
+
+      showToast(
+        "History clear nahi hua"
+      );
     }
   }
+
 
   /* =========================================================
      NEW CHAT
@@ -641,47 +1036,72 @@
 
   function newChat() {
     const messages =
-      document.getElementById("messages");
+      document.getElementById(
+        "messages"
+      );
 
     if (messages) {
-      messages.innerHTML = "";
+      messages.innerHTML =
+        "";
     }
 
     const welcome =
-      document.getElementById("welcomeScreen");
+      document.getElementById(
+        "welcomeScreen"
+      );
 
     if (welcome) {
-      welcome.classList.remove("hidden");
+      welcome.classList.remove(
+        "hidden"
+      );
     }
 
     hideSpecialAreas();
 
+    clearSelectedFile();
+
     const input =
-      document.getElementById("messageInput") ||
-      document.getElementById("userInput");
+      document.getElementById(
+        "messageInput"
+      ) ||
+      document.getElementById(
+        "userInput"
+      );
 
     if (input) {
       input.value = "";
+
       autoResize(input);
+
       input.focus();
     }
   }
+
 
   /* =========================================================
      IMAGE GENERATION
      ========================================================= */
 
-  async function generateImage(prompt) {
+  async function generateImage(
+    prompt
+  ) {
     if (!prompt) {
-      showToast("Image prompt likho");
+      showToast(
+        "Image prompt likho"
+      );
+
       return;
     }
 
     const imageArea =
-      document.getElementById("imageArea");
+      document.getElementById(
+        "imageArea"
+      );
 
     if (imageArea) {
-      imageArea.classList.remove("hidden");
+      imageArea.classList.remove(
+        "hidden"
+      );
 
       imageArea.innerHTML = `
         <div class="special-loading">
@@ -694,31 +1114,48 @@
       if (
         window.puter &&
         window.puter.ai &&
-        typeof window.puter.ai.txt2img === "function"
+        typeof window.puter.ai
+          .txt2img ===
+          "function"
       ) {
         const result =
-          await window.puter.ai.txt2img(prompt);
+          await window.puter.ai
+            .txt2img(prompt);
 
         if (imageArea) {
-          imageArea.innerHTML = "";
+          imageArea.innerHTML =
+            "";
 
           if (result) {
             const img =
-              document.createElement("img");
+              document.createElement(
+                "img"
+              );
 
             if (
-              typeof result === "string"
+              typeof result ===
+              "string"
             ) {
               img.src = result;
-            } else if (result.src) {
-              img.src = result.src;
-            } else if (result.url) {
-              img.src = result.url;
+            } else if (
+              result.src
+            ) {
+              img.src =
+                result.src;
+            } else if (
+              result.url
+            ) {
+              img.src =
+                result.url;
             }
 
-            img.alt = escapeHTML(prompt);
+            img.alt =
+              String(prompt);
 
-            imageArea.appendChild(img);
+            imageArea.appendChild(
+              img
+            );
+
           } else {
             imageArea.innerHTML =
               "<p>Image generate nahi hui.</p>";
@@ -728,10 +1165,15 @@
         return;
       }
 
-      throw new Error("Puter AI unavailable");
+      throw new Error(
+        "Puter AI unavailable"
+      );
 
     } catch (error) {
-      console.error("Image error:", error);
+      console.error(
+        "Image error:",
+        error
+      );
 
       if (imageArea) {
         imageArea.innerHTML = `
@@ -741,25 +1183,37 @@
         `;
       }
 
-      showToast("Image generation failed");
+      showToast(
+        "Image generation failed"
+      );
     }
   }
+
 
   /* =========================================================
      WEBSITE GENERATOR
      ========================================================= */
 
-  async function generateWebsite(prompt) {
+  async function generateWebsite(
+    prompt
+  ) {
     if (!prompt) {
-      showToast("Website idea likho");
+      showToast(
+        "Website idea likho"
+      );
+
       return;
     }
 
     const websiteArea =
-      document.getElementById("websiteArea");
+      document.getElementById(
+        "websiteArea"
+      );
 
     if (websiteArea) {
-      websiteArea.classList.remove("hidden");
+      websiteArea.classList.remove(
+        "hidden"
+      );
 
       websiteArea.innerHTML = `
         <div class="special-loading">
@@ -769,30 +1223,44 @@
     }
 
     try {
-      const result = await askAI(`
+      const result =
+        await askAI(`
 Create a complete modern website based on this idea:
 
 ${prompt}
 
 Return clean HTML, CSS and JavaScript.
+
 Make it responsive and professional.
 `);
 
       if (!result) {
-        throw new Error("No website response");
+        throw new Error(
+          "No website response"
+        );
       }
 
       if (websiteArea) {
         websiteArea.innerHTML = `
           <div class="website-result">
-            <h3>🌐 Generated Website Code</h3>
-            <pre><code>${escapeHTML(result)}</code></pre>
+
+            <h3>
+              🌐 Generated Website Code
+            </h3>
+
+            <pre><code>${escapeHTML(
+              result
+            )}</code></pre>
+
           </div>
         `;
       }
 
     } catch (error) {
-      console.error("Website error:", error);
+      console.error(
+        "Website error:",
+        error
+      );
 
       if (websiteArea) {
         websiteArea.innerHTML = `
@@ -804,21 +1272,31 @@ Make it responsive and professional.
     }
   }
 
+
   /* =========================================================
      WEB SEARCH
      ========================================================= */
 
-  async function searchWeb(query) {
+  async function searchWeb(
+    query
+  ) {
     if (!query) {
-      showToast("Search query likho");
+      showToast(
+        "Search query likho"
+      );
+
       return;
     }
 
     const searchArea =
-      document.getElementById("searchArea");
+      document.getElementById(
+        "searchArea"
+      );
 
     if (searchArea) {
-      searchArea.classList.remove("hidden");
+      searchArea.classList.remove(
+        "hidden"
+      );
 
       searchArea.innerHTML = `
         <div class="special-loading">
@@ -829,18 +1307,24 @@ Make it responsive and professional.
 
     try {
       const response =
-        await authFetch("/api/search-ai", {
-          method: "POST",
-          body: JSON.stringify({
-            query
-          })
-        });
+        await authFetch(
+          "/api/search-ai",
+          {
+            method: "POST",
+            body: JSON.stringify({
+              query
+            })
+          }
+        );
 
       if (!response.ok) {
-        throw new Error("Search failed");
+        throw new Error(
+          "Search failed"
+        );
       }
 
-      const data = await response.json();
+      const data =
+        await response.json();
 
       const result =
         data.answer ||
@@ -853,16 +1337,24 @@ Make it responsive and professional.
         searchArea.innerHTML = `
           <div class="search-result">
             ${formatAIText(
-              typeof result === "string"
+              typeof result ===
+                "string"
                 ? result
-                : JSON.stringify(result, null, 2)
+                : JSON.stringify(
+                    result,
+                    null,
+                    2
+                  )
             )}
           </div>
         `;
       }
 
     } catch (error) {
-      console.error("Search error:", error);
+      console.error(
+        "Search error:",
+        error
+      );
 
       if (searchArea) {
         searchArea.innerHTML = `
@@ -873,6 +1365,7 @@ Make it responsive and professional.
       }
     }
   }
+
 
   /* =========================================================
      SPECIAL AREAS
@@ -885,33 +1378,251 @@ Make it responsive and professional.
       "searchArea"
     ].forEach((id) => {
       const element =
-        document.getElementById(id);
+        document.getElementById(
+          id
+        );
 
       if (element) {
-        element.classList.add("hidden");
-        element.innerHTML = "";
+        element.classList.add(
+          "hidden"
+        );
+
+        element.innerHTML =
+          "";
       }
     });
   }
+
 
   /* =========================================================
      INPUT
      ========================================================= */
 
-  function autoResize(textarea) {
-    if (!textarea) return;
+  function autoResize(
+    textarea
+  ) {
+    if (!textarea) {
+      return;
+    }
 
-    textarea.style.height = "auto";
     textarea.style.height =
-      Math.min(textarea.scrollHeight, 180) + "px";
+      "auto";
+
+    textarea.style.height =
+      Math.min(
+        textarea.scrollHeight,
+        180
+      ) + "px";
   }
 
-  function handleKeyPress(event) {
-    if (event.key === "Enter" && !event.shiftKey) {
+
+  function handleKeyPress(
+    event
+  ) {
+    if (
+      event.key === "Enter" &&
+      !event.shiftKey
+    ) {
       event.preventDefault();
+
       sendMessage();
     }
   }
+
+
+  /* =========================================================
+     PDF / FILE ATTACHMENT
+     ========================================================= */
+
+  function setupFileAttachment() {
+    const fileInput =
+      document.getElementById(
+        "fileInput"
+      );
+
+    const selectedFileBox =
+      document.getElementById(
+        "selectedFile"
+      );
+
+    const selectedFileName =
+      document.getElementById(
+        "selectedFileName"
+      );
+
+    const removeButton =
+      document.getElementById(
+        "removeSelectedFile"
+      );
+
+    if (!fileInput) {
+      return;
+    }
+
+    /*
+      File picker
+    */
+
+    fileInput.addEventListener(
+      "change",
+      () => {
+        const file =
+          fileInput.files &&
+          fileInput.files[0];
+
+        if (!file) {
+          return;
+        }
+
+        handleSelectedFile(
+          file
+        );
+      }
+    );
+
+
+    /*
+      Remove button
+    */
+
+    if (removeButton) {
+      removeButton.addEventListener(
+        "click",
+        (event) => {
+          event.preventDefault();
+          event.stopPropagation();
+
+          clearSelectedFile();
+        }
+      );
+    }
+  }
+
+
+  function handleSelectedFile(
+    file
+  ) {
+    const maxSize =
+      10 * 1024 * 1024;
+
+    if (file.size > maxSize) {
+      showToast(
+        "File 10MB se chhoti honi chahiye."
+      );
+
+      clearSelectedFile();
+
+      return;
+    }
+
+    const allowedTypes = [
+      "application/pdf",
+      "text/plain",
+      "application/msword",
+      "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      "image/jpeg",
+      "image/png",
+      "image/webp"
+    ];
+
+    const extension =
+      file.name
+        .split(".")
+        .pop()
+        .toLowerCase();
+
+    const allowedExtensions = [
+      "pdf",
+      "txt",
+      "doc",
+      "docx",
+      "jpg",
+      "jpeg",
+      "png",
+      "webp"
+    ];
+
+    if (
+      !allowedTypes.includes(
+        file.type
+      ) &&
+      !allowedExtensions.includes(
+        extension
+      )
+    ) {
+      showToast(
+        "Ye file type supported nahi hai."
+      );
+
+      clearSelectedFile();
+
+      return;
+    }
+
+    selectedFile = file;
+
+    const selectedFileBox =
+      document.getElementById(
+        "selectedFile"
+      );
+
+    const selectedFileName =
+      document.getElementById(
+        "selectedFileName"
+      );
+
+    if (
+      selectedFileBox &&
+      selectedFileName
+    ) {
+      selectedFileName.textContent =
+        file.name;
+
+      selectedFileBox.classList.remove(
+        "hidden"
+      );
+    }
+
+    showToast(
+      `📎 ${file.name} attached`
+    );
+  }
+
+
+  function clearSelectedFile() {
+    selectedFile = null;
+
+    const fileInput =
+      document.getElementById(
+        "fileInput"
+      );
+
+    const selectedFileBox =
+      document.getElementById(
+        "selectedFile"
+      );
+
+    const selectedFileName =
+      document.getElementById(
+        "selectedFileName"
+      );
+
+    if (fileInput) {
+      fileInput.value = "";
+    }
+
+    if (selectedFileBox) {
+      selectedFileBox.classList.add(
+        "hidden"
+      );
+    }
+
+    if (selectedFileName) {
+      selectedFileName.textContent =
+        "File";
+    }
+  }
+
 
   /* =========================================================
      VOICE
@@ -926,47 +1637,69 @@ Make it responsive and professional.
       showToast(
         "Is browser me voice input supported nahi hai."
       );
+
       return;
     }
 
     const recognition =
       new SpeechRecognition();
 
-    recognition.lang = "hi-IN";
-    recognition.interimResults = false;
-    recognition.maxAlternatives = 1;
+    recognition.lang =
+      "hi-IN";
+
+    recognition.interimResults =
+      false;
+
+    recognition.maxAlternatives =
+      1;
 
     recognition.onstart = () => {
-      showToast("🎤 Listening...");
+      showToast(
+        "🎤 Listening..."
+      );
     };
 
-    recognition.onresult = (event) => {
+    recognition.onresult = (
+      event
+    ) => {
       const text =
-        event.results[0][0].transcript;
+        event.results[0][0]
+          .transcript;
 
       const input =
-        document.getElementById("messageInput") ||
-        document.getElementById("userInput");
+        document.getElementById(
+          "messageInput"
+        ) ||
+        document.getElementById(
+          "userInput"
+        );
 
       if (input) {
         input.value +=
-          (input.value ? " " : "") + text;
+          (input.value
+            ? " "
+            : "") + text;
 
         autoResize(input);
       }
     };
 
-    recognition.onerror = (event) => {
+    recognition.onerror = (
+      event
+    ) => {
       console.error(
         "Voice error:",
         event.error
       );
 
-      showToast("Voice input failed");
+      showToast(
+        "Voice input failed"
+      );
     };
 
     recognition.start();
   }
+
 
   /* =========================================================
      THEME
@@ -974,12 +1707,17 @@ Make it responsive and professional.
 
   function loadTheme() {
     const theme =
-      localStorage.getItem("novex-theme");
+      localStorage.getItem(
+        "novex-theme"
+      );
 
     if (theme === "light") {
-      document.body.classList.add("light-theme");
+      document.body.classList.add(
+        "light-theme"
+      );
     }
   }
+
 
   function toggleTheme() {
     document.body.classList.toggle(
@@ -993,9 +1731,12 @@ Make it responsive and professional.
 
     localStorage.setItem(
       "novex-theme",
-      isLight ? "light" : "dark"
+      isLight
+        ? "light"
+        : "dark"
     );
   }
+
 
   /* =========================================================
      SIDEBAR
@@ -1003,12 +1744,35 @@ Make it responsive and professional.
 
   function toggleSidebar() {
     const sidebar =
-      document.getElementById("sidebar");
+      document.getElementById(
+        "sidebar"
+      );
 
-    if (sidebar) {
-      sidebar.classList.toggle("collapsed");
+    if (!sidebar) {
+      return;
+    }
+
+    /*
+      Desktop:
+      collapsed sidebar
+
+      Mobile:
+      open sidebar
+    */
+
+    if (
+      window.innerWidth <= 800
+    ) {
+      sidebar.classList.toggle(
+        "open"
+      );
+    } else {
+      sidebar.classList.toggle(
+        "collapsed"
+      );
     }
   }
+
 
   /* =========================================================
      EVENTS
@@ -1016,15 +1780,25 @@ Make it responsive and professional.
 
   function setupAppEvents() {
     const input =
-      document.getElementById("messageInput") ||
-      document.getElementById("userInput");
+      document.getElementById(
+        "messageInput"
+      ) ||
+      document.getElementById(
+        "userInput"
+      );
 
-    if (input && !input.dataset.novexBound) {
-      input.dataset.novexBound = "true";
+    if (
+      input &&
+      !input.dataset.novexBound
+    ) {
+      input.dataset.novexBound =
+        "true";
 
       input.addEventListener(
         "input",
-        () => autoResize(input)
+        () => {
+          autoResize(input);
+        }
       );
 
       input.addEventListener(
@@ -1034,13 +1808,16 @@ Make it responsive and professional.
     }
 
     const themeButton =
-      document.getElementById("themeToggle");
+      document.getElementById(
+        "themeToggle"
+      );
 
     if (
       themeButton &&
       !themeButton.dataset.novexBound
     ) {
-      themeButton.dataset.novexBound = "true";
+      themeButton.dataset.novexBound =
+        "true";
 
       themeButton.addEventListener(
         "click",
@@ -1049,26 +1826,37 @@ Make it responsive and professional.
     }
   }
 
+
   /* =========================================================
      TOAST
      ========================================================= */
 
   function showToast(message) {
     let toast =
-      document.getElementById("novexToast");
+      document.getElementById(
+        "novexToast"
+      );
 
     if (!toast) {
       toast =
-        document.createElement("div");
+        document.createElement(
+          "div"
+        );
 
-      toast.id = "novexToast";
-      toast.className = "novex-toast";
+      toast.id =
+        "novexToast";
 
-      document.body.appendChild(toast);
+      document.body.appendChild(
+        toast
+      );
     }
 
-    toast.textContent = message;
-    toast.classList.add("show");
+    toast.textContent =
+      message;
+
+    toast.classList.add(
+      "show"
+    );
 
     clearTimeout(
       window.__novexToastTimer
@@ -1076,19 +1864,28 @@ Make it responsive and professional.
 
     window.__novexToastTimer =
       setTimeout(() => {
-        toast.classList.remove("show");
+        toast.classList.remove(
+          "show"
+        );
       }, 2500);
   }
+
 
   /* =========================================================
      LOGIN ERROR
      ========================================================= */
 
-  function showLoginError(message) {
+  function showLoginError(
+    message
+  ) {
     const signIn =
-      document.getElementById("clerkSignIn");
+      document.getElementById(
+        "clerkSignIn"
+      );
 
-    if (!signIn) return;
+    if (!signIn) {
+      return;
+    }
 
     signIn.innerHTML = `
       <div class="auth-error">
@@ -1097,21 +1894,73 @@ Make it responsive and professional.
     `;
   }
 
+
+  /* =========================================================
+     WINDOW RESIZE
+     ========================================================= */
+
+  window.addEventListener(
+    "resize",
+    () => {
+      const sidebar =
+        document.getElementById(
+          "sidebar"
+        );
+
+      if (
+        sidebar &&
+        window.innerWidth > 800
+      ) {
+        sidebar.classList.remove(
+          "open"
+        );
+      }
+    }
+  );
+
+
   /* =========================================================
      GLOBAL FUNCTIONS
      ========================================================= */
 
-  window.sendMessage = sendMessage;
-  window.askAI = askAI;
-  window.newChat = newChat;
-  window.generateImage = generateImage;
-  window.generateWebsite = generateWebsite;
-  window.searchWeb = searchWeb;
-  window.startVoiceInput = startVoiceInput;
-  window.handleKeyPress = handleKeyPress;
-  window.autoResize = autoResize;
-  window.toggleTheme = toggleTheme;
-  window.toggleSidebar = toggleSidebar;
-  window.clearHistory = clearHistory;
+  window.sendMessage =
+    sendMessage;
+
+  window.askAI =
+    askAI;
+
+  window.newChat =
+    newChat;
+
+  window.generateImage =
+    generateImage;
+
+  window.generateWebsite =
+    generateWebsite;
+
+  window.searchWeb =
+    searchWeb;
+
+  window.startVoiceInput =
+    startVoiceInput;
+
+  window.handleKeyPress =
+    handleKeyPress;
+
+  window.autoResize =
+    autoResize;
+
+  window.toggleTheme =
+    toggleTheme;
+
+  window.toggleSidebar =
+    toggleSidebar;
+
+  window.clearHistory =
+    clearHistory;
+
+  window.clearSelectedFile =
+    clearSelectedFile;
 
 })();
+````
