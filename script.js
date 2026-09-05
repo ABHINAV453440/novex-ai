@@ -1,1903 +1,1117 @@
-```js
-"use strict";
 
 /* =========================================================
-   NOVEX AI
-   Clerk Login + Authenticated API + Chat + History
-   FIXED CLERK INITIALIZATION
-========================================================= */
+   NOVEX AI — COMPLETE SCRIPT
+   Clerk + Chat + History + Image + Website + Search
+   ========================================================= */
 
-let clerkReady = false;
-let appStarted = false;
-let loginMounted = false;
-let loginWatcher = null;
+(() => {
+  "use strict";
 
+  let clerkReady = false;
+  let appStarted = false;
+  let loginMounted = false;
+  let loginWatcherStarted = false;
 
-/* =========================================================
-   START
-========================================================= */
+  const sleep = (ms) =>
+    new Promise((resolve) => setTimeout(resolve, ms));
 
-document.addEventListener("DOMContentLoaded", () => {
+  /* =========================================================
+     START
+     ========================================================= */
+
+  document.addEventListener("DOMContentLoaded", () => {
     initializeNovex();
     loadTheme();
-});
+  });
 
-
-/* =========================================================
-   CLERK INITIALIZE
-========================================================= */
-
-async function initializeNovex() {
-
+  async function initializeNovex() {
     try {
+      let attempts = 0;
 
-        updateStatus("Loading login...");
+      while (!window.Clerk && attempts < 150) {
+        await sleep(100);
+        attempts++;
+      }
 
-        /*
-         * Clerk script load hone ka wait.
-         */
-        let attempts = 0;
+      if (!window.Clerk) {
+        showLoginError("Clerk load nahi ho paya.");
+        return;
+      }
 
-        while (
-            typeof window.Clerk === "undefined" &&
-            attempts < 150
-        ) {
-            await sleep(100);
-            attempts++;
-        }
+      /*
+        index.html Clerk UI bundle ko load karke:
+        window.__novexClerkReady = true
+        set karega.
+      */
 
-        if (typeof window.Clerk === "undefined") {
+      while (!window.__novexClerkReady && attempts < 300) {
+        await sleep(100);
+        attempts++;
+      }
 
-            console.error(
-                "Clerk object not found after waiting."
-            );
+      if (!window.__novexClerkReady) {
+        console.error("NOVEX: Clerk UI initialization timeout.");
+        showLoginError("Login system start nahi ho paya.");
+        return;
+      }
 
-            showLoginError(
-                "Clerk login load nahi ho paya. Page ko Ctrl + F5 se refresh karo."
-            );
+      clerkReady = true;
 
-            return;
-        }
+      console.log("NOVEX: Clerk ready.");
 
+      if (window.Clerk.isSignedIn) {
+        await openNovexApp();
+      } else {
+        showLogin();
+      }
 
-        /*
-         * Clerk.load()
-         */
-        if (
-            typeof window.Clerk.load === "function" &&
-            !clerkReady
-        ) {
-
-            await window.Clerk.load({
-                signInForceRedirectUrl:
-                    window.location.href,
-                signUpForceRedirectUrl:
-                    window.location.href
-            });
-
-            clerkReady = true;
-        }
-
-
-        /*
-         * Login state check.
-         */
-        if (window.Clerk.isSignedIn) {
-
-            await openNovexApp();
-
-        } else {
-
-            showLogin();
-
-        }
+      setupClerkListener();
 
     } catch (error) {
-
-        console.error(
-            "CLERK INITIALIZATION ERROR:",
-            error
-        );
-
-        showLoginError(
-            "Login system start nahi ho paya: " +
-            (error.message || "Unknown error")
-        );
+      console.error("Clerk initialization error:", error);
+      showLoginError("Login system start nahi ho paya.");
     }
-}
+  }
 
+  /* =========================================================
+     CLERK SESSION LISTENER
+     ========================================================= */
 
-/* =========================================================
-   SLEEP
-========================================================= */
-
-function sleep(ms) {
-
-    return new Promise(
-        resolve => setTimeout(resolve, ms)
-    );
-}
-
-
-/* =========================================================
-   LOGIN SCREEN
-========================================================= */
-
-function showLogin() {
-
-    const authScreen =
-        document.getElementById("authScreen");
-
-    const app =
-        document.getElementById("app");
-
-    const signIn =
-        document.getElementById("clerkSignIn");
-
-
-    if (!authScreen || !signIn) {
-
-        console.error(
-            "authScreen or clerkSignIn not found."
-        );
-
-        return;
+  function setupClerkListener() {
+    if (!window.Clerk || typeof window.Clerk.addListener !== "function") {
+      return;
     }
 
+    window.Clerk.addListener(async (state) => {
+      try {
+        if (state && state.session) {
+          await openNovexApp();
+        } else if (window.Clerk.isSignedIn) {
+          await openNovexApp();
+        } else {
+          appStarted = false;
+          showLogin();
+        }
+      } catch (error) {
+        console.error("Clerk listener error:", error);
+      }
+    });
+  }
+
+  /* =========================================================
+     LOGIN
+     ========================================================= */
+
+  function showLogin() {
+    const authScreen = document.getElementById("authScreen");
+    const app = document.getElementById("app");
+    const signIn = document.getElementById("clerkSignIn");
+
+    if (!authScreen || !signIn) return;
 
     authScreen.classList.remove("hidden");
 
-
     if (app) {
-        app.classList.add("hidden");
+      app.classList.add("hidden");
     }
 
-
-    /*
-     * Existing Clerk UI remove.
-     */
     if (!loginMounted) {
+      try {
+        signIn.innerHTML = "";
 
-        try {
+        window.Clerk.mountSignIn(signIn);
 
-            signIn.innerHTML = "";
+        loginMounted = true;
 
-            /*
-             * Modern Clerk mount.
-             */
-            if (
-                typeof window.Clerk.mountSignIn ===
-                "function"
-            ) {
+        console.log("NOVEX: Clerk SignIn mounted.");
 
-                window.Clerk.mountSignIn(
-                    signIn,
-                    {
-                        signInForceRedirectUrl:
-                            window.location.href
-                    }
-                );
+      } catch (error) {
+        console.error("Clerk SignIn error:", error);
 
-                loginMounted = true;
+        loginMounted = false;
 
-            } else {
-
-                throw new Error(
-                    "Clerk mountSignIn unavailable."
-                );
-            }
-
-        } catch (error) {
-
-            console.error(
-                "CLERK SIGN-IN MOUNT ERROR:",
-                error
-            );
-
-            loginMounted = false;
-
-            showLoginError(
-                "Clerk login UI load nahi ho paya: " +
-                (error.message || "Unknown error")
-            );
-
-            return;
-        }
+        showLoginError(
+          "Login screen load nahi ho paya. Page refresh karke try karo."
+        );
+      }
     }
 
-
-    /*
-     * Login state watcher.
-     */
     watchLogin();
-}
+  }
 
+  function watchLogin() {
+    if (loginWatcherStarted) return;
 
-/* =========================================================
-   LOGIN WATCHER
-========================================================= */
+    loginWatcherStarted = true;
 
-function watchLogin() {
-
-    if (loginWatcher) {
+    const check = async () => {
+      if (
+        clerkReady &&
+        window.Clerk &&
+        window.Clerk.isSignedIn
+      ) {
+        await openNovexApp();
         return;
+      }
+
+      setTimeout(check, 1000);
+    };
+
+    check();
+  }
+
+  /* =========================================================
+     OPEN APP
+     ========================================================= */
+
+  async function openNovexApp() {
+    if (!window.Clerk || !window.Clerk.isSignedIn) {
+      showLogin();
+      return;
     }
-
-
-    /*
-     * Clerk event listener.
-     * Agar available hai to use karo.
-     */
-    try {
-
-        if (
-            window.Clerk &&
-            typeof window.Clerk.addListener ===
-            "function"
-        ) {
-
-            window.Clerk.addListener(
-                ({ session }) => {
-
-                    if (
-                        session &&
-                        window.Clerk.isSignedIn
-                    ) {
-
-                        openNovexApp();
-                    }
-                }
-            );
-        }
-
-    } catch (error) {
-
-        console.warn(
-            "Clerk listener unavailable:",
-            error
-        );
-    }
-
-
-    /*
-     * Backup polling.
-     */
-    loginWatcher =
-        setInterval(
-            async () => {
-
-                try {
-
-                    if (
-                        window.Clerk &&
-                        window.Clerk.isSignedIn
-                    ) {
-
-                        clearInterval(
-                            loginWatcher
-                        );
-
-                        loginWatcher = null;
-
-                        await openNovexApp();
-                    }
-
-                } catch (error) {
-
-                    console.error(
-                        "LOGIN WATCH ERROR:",
-                        error
-                    );
-                }
-
-            },
-            700
-        );
-}
-
-
-/* =========================================================
-   OPEN NOVEX APP
-========================================================= */
-
-async function openNovexApp() {
 
     if (appStarted) {
-        return;
+      return;
     }
-
-
-    /*
-     * Login confirm.
-     */
-    if (
-        !window.Clerk ||
-        !window.Clerk.isSignedIn
-    ) {
-
-        showLogin();
-
-        return;
-    }
-
 
     appStarted = true;
 
-
-    if (loginWatcher) {
-
-        clearInterval(
-            loginWatcher
-        );
-
-        loginWatcher = null;
-    }
-
-
-    const authScreen =
-        document.getElementById("authScreen");
-
-    const app =
-        document.getElementById("app");
-
+    const authScreen = document.getElementById("authScreen");
+    const app = document.getElementById("app");
 
     if (authScreen) {
-        authScreen.classList.add("hidden");
+      authScreen.classList.add("hidden");
     }
-
 
     if (app) {
-        app.classList.remove("hidden");
+      app.classList.remove("hidden");
     }
-
-
-    setupUser();
-
-
-    updateStatus("Loading...");
-
-
-    /*
-     * User backend record.
-     */
-    try {
-
-        await authFetch(
-            "/api/me",
-            {
-                method: "GET"
-            }
-        );
-
-    } catch (error) {
-
-        console.warn(
-            "ME API:",
-            error
-        );
-    }
-
-
-    /*
-     * Chat history.
-     */
-    try {
-
-        await loadHistory();
-
-    } catch (error) {
-
-        console.warn(
-            "History loading:",
-            error
-        );
-    }
-
-
-    updateStatus(
-        "Ready to help"
-    );
-}
-
-
-/* =========================================================
-   USER
-========================================================= */
-
-function setupUser() {
 
     try {
+      await setupUser();
+      await loadHistory();
+      setupAppEvents();
 
-        const user =
-            window.Clerk?.user;
-
-
-        if (!user) {
-            return;
-        }
-
-
-        const username =
-            user.firstName ||
-            user.username ||
-            user.primaryEmailAddress?.emailAddress ||
-            "User";
-
-
-        const nameElement =
-            document.getElementById(
-                "loggedUsername"
-            );
-
-
-        if (nameElement) {
-
-            nameElement.textContent =
-                username;
-        }
-
-
-        const avatar =
-            document.getElementById(
-                "userAvatar"
-            );
-
-
-        if (
-            avatar &&
-            user.imageUrl
-        ) {
-
-            avatar.innerHTML = "";
-
-            const img =
-                document.createElement("img");
-
-            img.src =
-                user.imageUrl;
-
-            img.alt =
-                "User";
-
-            img.style.width =
-                "100%";
-
-            img.style.height =
-                "100%";
-
-            img.style.objectFit =
-                "cover";
-
-            img.style.borderRadius =
-                "50%";
-
-            avatar.appendChild(img);
-        }
+      console.log("NOVEX: App started successfully.");
 
     } catch (error) {
-
-        console.error(
-            "USER SETUP ERROR:",
-            error
-        );
+      console.error("App startup error:", error);
     }
-}
+  }
 
+  /* =========================================================
+     USER
+     ========================================================= */
 
-/* =========================================================
-   STATUS
-========================================================= */
+  async function setupUser() {
+    try {
+      const response = await authFetch("/api/me");
 
-function updateStatus(text) {
+      if (!response.ok) {
+        throw new Error("User API failed");
+      }
 
-    const status =
-        document.getElementById(
-            "statusText"
-        );
+      const data = await response.json();
 
+      const username =
+        data?.user?.username ||
+        data?.user?.firstName ||
+        data?.user?.email ||
+        "User";
 
-    if (status) {
+      const loggedUsername =
+        document.getElementById("loggedUsername");
 
-        status.textContent =
-            text || "Ready to help";
+      if (loggedUsername) {
+        loggedUsername.textContent = username;
+      }
+
+      const avatar =
+        document.getElementById("userAvatar");
+
+      if (avatar) {
+        avatar.textContent =
+          username.charAt(0).toUpperCase();
+      }
+
+    } catch (error) {
+      console.error("setupUser error:", error);
+
+      const loggedUsername =
+        document.getElementById("loggedUsername");
+
+      if (loggedUsername) {
+        loggedUsername.textContent = "User";
+      }
     }
-}
+  }
 
+  /* =========================================================
+     AUTH FETCH
+     ========================================================= */
 
-/* =========================================================
-   GET CLERK TOKEN
-========================================================= */
-
-async function getAuthToken() {
-
-    if (
+  async function getAuthToken() {
+    try {
+      if (
         !window.Clerk ||
-        !window.Clerk.isSignedIn
-    ) {
+        !window.Clerk.session ||
+        typeof window.Clerk.session.getToken !== "function"
+      ) {
+        return null;
+      }
 
-        throw new Error(
-            "Login required"
-        );
+      return await window.Clerk.session.getToken();
+
+    } catch (error) {
+      console.error("Token error:", error);
+      return null;
     }
+  }
 
-
-    /*
-     * Current Clerk session.
-     */
-    let session =
-        window.Clerk.session;
-
-
-    /*
-     * Session ready hone ka short wait.
-     */
-    if (!session) {
-
-        for (
-            let i = 0;
-            i < 30;
-            i++
-        ) {
-
-            await sleep(100);
-
-            session =
-                window.Clerk.session;
-
-            if (session) {
-                break;
-            }
-        }
-    }
-
-
-    if (
-        !session ||
-        typeof session.getToken !==
-        "function"
-    ) {
-
-        throw new Error(
-            "Clerk session token available nahi hai."
-        );
-    }
-
-
-    const token =
-        await session.getToken();
-
-
-    if (!token) {
-
-        throw new Error(
-            "Clerk session token nahi mila."
-        );
-    }
-
-
-    return token;
-}
-
-
-/* =========================================================
-   AUTHENTICATED FETCH
-========================================================= */
-
-async function authFetch(
-    url,
-    options = {}
-) {
-
-    const token =
-        await getAuthToken();
-
+  async function authFetch(url, options = {}) {
+    const token = await getAuthToken();
 
     const headers = {
-        ...(options.headers || {}),
-        "Authorization":
-            `Bearer ${token}`,
-        "Content-Type":
-            "application/json"
+      ...(options.headers || {})
     };
 
+    if (token) {
+      headers.Authorization = `Bearer ${token}`;
+    }
 
-    return fetch(
-        url,
-        {
-            ...options,
-            headers
-        }
-    );
-}
+    if (
+      options.body &&
+      !headers["Content-Type"]
+    ) {
+      headers["Content-Type"] = "application/json";
+    }
 
+    return fetch(url, {
+      ...options,
+      headers,
+      credentials: "include"
+    });
+  }
 
-/* =========================================================
-   MAIN SEND
-========================================================= */
+  /* =========================================================
+     CHAT
+     ========================================================= */
 
-async function sendMessage() {
-
+  async function sendMessage() {
     const input =
-        document.getElementById(
-            "userInput"
-        );
+      document.getElementById("messageInput") ||
+      document.getElementById("userInput");
 
+    if (!input) return;
 
-    if (!input) {
-        return;
-    }
+    const message = input.value.trim();
 
-
-    const message =
-        input.value.trim();
-
-
-    if (!message) {
-        return;
-    }
-
-
-    addMessage(
-        message,
-        "user"
-    );
-
+    if (!message) return;
 
     input.value = "";
 
     autoResize(input);
 
+    addMessage(message, "user");
 
-    const welcome =
-        document.getElementById(
-            "welcome"
-        );
+    showTyping();
 
+    try {
+      const response = await authFetch("/api/chat", {
+        method: "POST",
+        body: JSON.stringify({
+          message
+        })
+      });
 
-    if (welcome) {
+      hideTyping();
 
-        welcome.classList.add(
-            "hidden"
-        );
+      if (!response.ok) {
+        throw new Error("AI request failed");
+      }
+
+      const data = await response.json();
+
+      const answer =
+        data.reply ||
+        data.message ||
+        data.response ||
+        "Sorry, mujhe response nahi mila.";
+
+      addMessage(answer, "ai");
+
+      await loadHistory();
+
+    } catch (error) {
+      hideTyping();
+
+      console.error("Chat error:", error);
+
+      addMessage(
+        "⚠️ AI response nahi aa raha. Thodi der baad dobara try karo.",
+        "ai"
+      );
+
+      showToast("AI request failed");
+    }
+  }
+
+  async function askAI(message) {
+    if (!message) return "";
+
+    try {
+      const response = await authFetch("/api/chat", {
+        method: "POST",
+        body: JSON.stringify({
+          message
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error("AI request failed");
+      }
+
+      const data = await response.json();
+
+      return (
+        data.reply ||
+        data.message ||
+        data.response ||
+        ""
+      );
+
+    } catch (error) {
+      console.error("askAI error:", error);
+      return "";
+    }
+  }
+
+  /* =========================================================
+     MESSAGE UI
+     ========================================================= */
+
+  function addMessage(text, type = "ai") {
+    const messages =
+      document.getElementById("messages");
+
+    if (!messages) return;
+
+    const messageDiv =
+      document.createElement("div");
+
+    messageDiv.className =
+      `message ${type === "user" ? "user-message" : "ai-message"}`;
+
+    const content =
+      document.createElement("div");
+
+    content.className = "message-content";
+
+    content.innerHTML = formatAIText(text);
+
+    messageDiv.appendChild(content);
+
+    messages.appendChild(messageDiv);
+
+    messages.scrollTop = messages.scrollHeight;
+  }
+
+  function formatAIText(text) {
+    if (!text) return "";
+
+    let safe = escapeHTML(String(text));
+
+    safe = safe.replace(
+      /```([\s\S]*?)```/g,
+      "<pre><code>$1</code></pre>"
+    );
+
+    safe = safe.replace(
+      /\*\*(.*?)\*\*/g,
+      "<strong>$1</strong>"
+    );
+
+    safe = safe.replace(
+      /\n/g,
+      "<br>"
+    );
+
+    return safe;
+  }
+
+  function escapeHTML(text) {
+    const div = document.createElement("div");
+    div.textContent = text;
+    return div.innerHTML;
+  }
+
+  /* =========================================================
+     TYPING
+     ========================================================= */
+
+  function showTyping() {
+    hideTyping();
+
+    const messages =
+      document.getElementById("messages");
+
+    if (!messages) return;
+
+    const typing =
+      document.createElement("div");
+
+    typing.id = "novexTyping";
+    typing.className = "message ai-message";
+
+    typing.innerHTML = `
+      <div class="message-content">
+        <span class="typing-dot">●</span>
+        <span class="typing-dot">●</span>
+        <span class="typing-dot">●</span>
+      </div>
+    `;
+
+    messages.appendChild(typing);
+
+    messages.scrollTop = messages.scrollHeight;
+  }
+
+  function hideTyping() {
+    const typing =
+      document.getElementById("novexTyping");
+
+    if (typing) {
+      typing.remove();
+    }
+  }
+
+  /* =========================================================
+     HISTORY
+     ========================================================= */
+
+  async function loadHistory() {
+    const historyList =
+      document.getElementById("historyList");
+
+    if (!historyList) return;
+
+    try {
+      const response =
+        await authFetch("/api/history");
+
+      if (!response.ok) return;
+
+      const data = await response.json();
+
+      const history =
+        Array.isArray(data)
+          ? data
+          : data.history || [];
+
+      historyList.innerHTML = "";
+
+      history.forEach((item, index) => {
+        const title =
+          item.title ||
+          item.message ||
+          item.prompt ||
+          "New Chat";
+
+        const div =
+          document.createElement("div");
+
+        div.className = "history-item";
+
+        div.innerHTML = `
+          <span>${escapeHTML(
+            String(title).slice(0, 40)
+          )}</span>
+          <button
+            class="history-delete"
+            data-index="${index}">
+            ×
+          </button>
+        `;
+
+        div.addEventListener("click", (event) => {
+          if (
+            event.target.classList.contains(
+              "history-delete"
+            )
+          ) {
+            return;
+          }
+
+          restoreHistoryItem(item);
+        });
+
+        const deleteButton =
+          div.querySelector(".history-delete");
+
+        if (deleteButton) {
+          deleteButton.addEventListener(
+            "click",
+            async (event) => {
+              event.stopPropagation();
+
+              await deleteHistory(index);
+            }
+          );
+        }
+
+        historyList.appendChild(div);
+      });
+
+    } catch (error) {
+      console.error("History error:", error);
+    }
+  }
+
+  function restoreHistoryItem(item) {
+    const messages =
+      document.getElementById("messages");
+
+    if (!messages) return;
+
+    messages.innerHTML = "";
+
+    if (item.message) {
+      addMessage(item.message, "user");
     }
 
+    if (item.reply) {
+      addMessage(item.reply, "ai");
+    } else if (item.response) {
+      addMessage(item.response, "ai");
+    }
+  }
+
+  async function deleteHistory(index) {
+    try {
+      const response =
+        await authFetch(`/api/history/${index}`, {
+          method: "DELETE"
+        });
+
+      if (!response.ok) {
+        throw new Error("Delete failed");
+      }
+
+      await loadHistory();
+
+      showToast("Chat deleted");
+
+    } catch (error) {
+      console.error("Delete history error:", error);
+      showToast("Delete failed");
+    }
+  }
+
+  async function clearHistory() {
+    try {
+      const response =
+        await authFetch("/api/history", {
+          method: "DELETE"
+        });
+
+      if (!response.ok) {
+        throw new Error("Clear failed");
+      }
+
+      const messages =
+        document.getElementById("messages");
+
+      if (messages) {
+        messages.innerHTML = "";
+      }
+
+      await loadHistory();
+
+      showToast("History cleared");
+
+    } catch (error) {
+      console.error("Clear history error:", error);
+      showToast("History clear nahi hua");
+    }
+  }
+
+  /* =========================================================
+     NEW CHAT
+     ========================================================= */
+
+  function newChat() {
+    const messages =
+      document.getElementById("messages");
+
+    if (messages) {
+      messages.innerHTML = "";
+    }
+
+    const welcome =
+      document.getElementById("welcomeScreen");
+
+    if (welcome) {
+      welcome.classList.remove("hidden");
+    }
 
     hideSpecialAreas();
 
+    const input =
+      document.getElementById("messageInput") ||
+      document.getElementById("userInput");
 
-    updateStatus(
-        "Thinking..."
-    );
+    if (input) {
+      input.value = "";
+      autoResize(input);
+      input.focus();
+    }
+  }
 
+  /* =========================================================
+     IMAGE GENERATION
+     ========================================================= */
 
-    try {
-
-        const lower =
-            message.toLowerCase();
-
-
-        /* =================================================
-           IMAGE
-        ================================================= */
-
-        if (
-            lower.includes("generate image") ||
-            lower.includes("image banao") ||
-            lower.includes("image bana") ||
-            lower.includes("photo banao") ||
-            lower.includes("picture banao") ||
-            lower.includes("draw") ||
-            lower.includes("ai image")
-        ) {
-
-            await generateImage(
-                message
-            );
-        }
-
-
-        /* =================================================
-           WEBSITE
-        ================================================= */
-
-        else if (
-            lower.includes("website banao") ||
-            lower.includes("website bana") ||
-            lower.includes("website create") ||
-            lower.includes("html website") ||
-            lower.includes("website")
-        ) {
-
-            await generateWebsite(
-                message
-            );
-        }
-
-
-        /* =================================================
-           WEB SEARCH
-        ================================================= */
-
-        else if (
-            lower.includes("latest") ||
-            lower.includes("today") ||
-            lower.includes("news") ||
-            lower.includes("search web") ||
-            lower.includes("internet par") ||
-            lower.includes("google par")
-        ) {
-
-            await searchWeb(
-                message
-            );
-        }
-
-
-        /* =================================================
-           NORMAL AI
-        ================================================= */
-
-        else {
-
-            await askAI(
-                message
-            );
-        }
-
-    } catch (error) {
-
-        console.error(
-            "SEND MESSAGE ERROR:",
-            error
-        );
-
-
-        addMessage(
-            "❌ " +
-            (
-                error.message ||
-                "Unknown error"
-            ),
-            "ai"
-        );
-
-
-        updateStatus(
-            "Error"
-        );
+  async function generateImage(prompt) {
+    if (!prompt) {
+      showToast("Image prompt likho");
+      return;
     }
 
+    const imageArea =
+      document.getElementById("imageArea");
 
-    /*
-     * History failure se main chat crash nahi hogi.
-     */
+    if (imageArea) {
+      imageArea.classList.remove("hidden");
+
+      imageArea.innerHTML = `
+        <div class="special-loading">
+          🎨 Image generate ho rahi hai...
+        </div>
+      `;
+    }
+
     try {
+      if (
+        window.puter &&
+        window.puter.ai &&
+        typeof window.puter.ai.txt2img === "function"
+      ) {
+        const result =
+          await window.puter.ai.txt2img(prompt);
 
-        await loadHistory();
+        if (imageArea) {
+          imageArea.innerHTML = "";
 
-    } catch (_) {}
-}
+          if (result) {
+            const img =
+              document.createElement("img");
 
-
-/* =========================================================
-   AI CHAT
-========================================================= */
-
-async function askAI(message) {
-
-    const response =
-        await authFetch(
-            "/api/chat",
-            {
-                method: "POST",
-
-                body:
-                    JSON.stringify({
-                        message:
-                            message
-                    })
+            if (
+              typeof result === "string"
+            ) {
+              img.src = result;
+            } else if (result.src) {
+              img.src = result.src;
+            } else if (result.url) {
+              img.src = result.url;
             }
-        );
 
+            img.alt = escapeHTML(prompt);
 
-    let data = {};
+            imageArea.appendChild(img);
+          } else {
+            imageArea.innerHTML =
+              "<p>Image generate nahi hui.</p>";
+          }
+        }
 
+        return;
+      }
 
-    try {
-
-        data =
-            await response.json();
+      throw new Error("Puter AI unavailable");
 
     } catch (error) {
+      console.error("Image error:", error);
 
-        throw new Error(
-            "Server ne valid response nahi diya. HTTP " +
-            response.status
-        );
+      if (imageArea) {
+        imageArea.innerHTML = `
+          <div class="special-error">
+            ⚠️ Image generation failed.
+          </div>
+        `;
+      }
+
+      showToast("Image generation failed");
+    }
+  }
+
+  /* =========================================================
+     WEBSITE GENERATOR
+     ========================================================= */
+
+  async function generateWebsite(prompt) {
+    if (!prompt) {
+      showToast("Website idea likho");
+      return;
     }
 
+    const websiteArea =
+      document.getElementById("websiteArea");
 
-    console.log(
-        "NOVEX API RESPONSE:",
-        data
-    );
+    if (websiteArea) {
+      websiteArea.classList.remove("hidden");
 
-
-    if (!response.ok) {
-
-        throw new Error(
-            data.error ||
-            data.message ||
-            "AI request failed. HTTP " +
-            response.status
-        );
+      websiteArea.innerHTML = `
+        <div class="special-loading">
+          🌐 Website generate ho rahi hai...
+        </div>
+      `;
     }
-
-
-    const answer =
-        data.answer ||
-        data.reply ||
-        data.content ||
-        "AI ne koi answer nahi diya.";
-
-
-    addMessage(
-        answer,
-        "ai"
-    );
-
-
-    updateStatus(
-        "Ready to help"
-    );
-}
-
-
-/* =========================================================
-   HISTORY
-========================================================= */
-
-async function loadHistory() {
 
     try {
+      const result = await askAI(`
+Create a complete modern website based on this idea:
 
-        const response =
-            await authFetch(
-                "/api/history",
-                {
-                    method: "GET"
-                }
-            );
-
-
-        let data = {};
-
-
-        try {
-
-            data =
-                await response.json();
-
-        } catch (_) {
-
-            return;
-        }
-
-
-        if (!response.ok) {
-
-            console.error(
-                "HISTORY ERROR:",
-                data
-            );
-
-            return;
-        }
-
-
-        const list =
-            document.getElementById(
-                "historyList"
-            );
-
-
-        if (!list) {
-            return;
-        }
-
-
-        list.innerHTML = "";
-
-
-        const history =
-            Array.isArray(
-                data.history
-            )
-                ? data.history
-                : (
-                    Array.isArray(
-                        data.chats
-                    )
-                        ? data.chats
-                        : []
-                );
-
-
-        history.forEach(
-            (item, index) => {
-
-                const row =
-                    document.createElement(
-                        "div"
-                    );
-
-
-                row.className =
-                    "history-item";
-
-
-                const title =
-                    document.createElement(
-                        "span"
-                    );
-
-
-                title.textContent =
-                    item.message ||
-                    item.title ||
-                    "New Chat";
-
-
-                const button =
-                    document.createElement(
-                        "button"
-                    );
-
-
-                button.textContent =
-                    "🗑️";
-
-
-                button.title =
-                    "Delete";
-
-
-                button.type =
-                    "button";
-
-
-                button.onclick =
-                    () => deleteChat(
-                        index
-                    );
-
-
-                row.appendChild(
-                    title
-                );
-
-
-                row.appendChild(
-                    button
-                );
-
-
-                list.appendChild(
-                    row
-                );
-            }
-        );
-
-    } catch (error) {
-
-        console.error(
-            "HISTORY ERROR:",
-            error
-        );
-    }
-}
-
-
-/* =========================================================
-   DELETE ONE CHAT
-========================================================= */
-
-async function deleteChat(index) {
-
-    try {
-
-        const response =
-            await authFetch(
-                `/api/history/${index}`,
-                {
-                    method:
-                        "DELETE"
-                }
-            );
-
-
-        if (response.ok) {
-
-            await loadHistory();
-        }
-
-    } catch (error) {
-
-        console.error(
-            "DELETE ERROR:",
-            error
-        );
-    }
-}
-
-
-/* =========================================================
-   CLEAR HISTORY
-========================================================= */
-
-async function clearHistory() {
-
-    try {
-
-        const response =
-            await authFetch(
-                "/api/history",
-                {
-                    method:
-                        "DELETE"
-                }
-            );
-
-
-        if (response.ok) {
-
-            await loadHistory();
-        }
-
-    } catch (error) {
-
-        console.error(
-            "CLEAR HISTORY ERROR:",
-            error
-        );
-    }
-}
-
-
-/* =========================================================
-   IMAGE — PUTER
-========================================================= */
-
-async function generateImage(prompt) {
-
-    const area =
-        document.getElementById(
-            "imageArea"
-        );
-
-
-    const loading =
-        document.getElementById(
-            "imageLoading"
-        );
-
-
-    const result =
-        document.getElementById(
-            "imageResult"
-        );
-
-
-    const promptText =
-        document.getElementById(
-            "imagePromptText"
-        );
-
-
-    if (area) {
-
-        area.classList.remove(
-            "hidden"
-        );
-    }
-
-
-    if (loading) {
-
-        loading.classList.remove(
-            "hidden"
-        );
-    }
-
-
-    if (promptText) {
-
-        promptText.textContent =
-            prompt;
-    }
-
-
-    if (result) {
-
-        result.innerHTML = "";
-    }
-
-
-    try {
-
-        if (
-            typeof puter === "undefined" ||
-            !puter.ai
-        ) {
-
-            throw new Error(
-                "Puter service load nahi hua."
-            );
-        }
-
-
-        const image =
-            await puter.ai.txt2img(
-                prompt
-            );
-
-
-        if (result) {
-
-            result.appendChild(
-                image
-            );
-        }
-
-
-        addMessage(
-            "✅ Image generate ho gayi.",
-            "ai"
-        );
-
-
-        updateStatus(
-            "Ready to help"
-        );
-
-    } catch (error) {
-
-        console.error(
-            "IMAGE ERROR:",
-            error
-        );
-
-
-        addMessage(
-            "❌ Image generate nahi ho payi: " +
-            error.message,
-            "ai"
-        );
-
-
-        updateStatus(
-            "Image Error"
-        );
-
-    } finally {
-
-        if (loading) {
-
-            loading.classList.add(
-                "hidden"
-            );
-        }
-    }
-}
-
-
-/* =========================================================
-   WEBSITE
-========================================================= */
-
-async function generateWebsite(prompt) {
-
-    const area =
-        document.getElementById(
-            "websiteArea"
-        );
-
-
-    const loading =
-        document.getElementById(
-            "websiteLoading"
-        );
-
-
-    const result =
-        document.getElementById(
-            "websiteResult"
-        );
-
-
-    if (area) {
-
-        area.classList.remove(
-            "hidden"
-        );
-    }
-
-
-    if (loading) {
-
-        loading.classList.remove(
-            "hidden"
-        );
-    }
-
-
-    if (result) {
-
-        result.innerHTML = "";
-    }
-
-
-    try {
-
-        const response =
-            await authFetch(
-                "/api/chat",
-                {
-                    method: "POST",
-
-                    body:
-                        JSON.stringify({
-                            message:
-`Create a complete modern website.
-
-User request:
 ${prompt}
 
-Return complete working HTML code with CSS and JavaScript.`
-                        })
-                }
-            );
+Return clean HTML, CSS and JavaScript.
+Make it responsive and professional.
+`);
 
+      if (!result) {
+        throw new Error("No website response");
+      }
 
-        const data =
-            await response.json();
-
-
-        if (!response.ok) {
-
-            throw new Error(
-                data.error ||
-                "Website generation failed."
-            );
-        }
-
-
-        const answer =
-            data.answer ||
-            data.reply ||
-            "";
-
-
-        if (result) {
-
-            const pre =
-                document.createElement(
-                    "pre"
-                );
-
-
-            pre.textContent =
-                answer;
-
-
-            result.appendChild(
-                pre
-            );
-        }
-
-
-        addMessage(
-            "✅ Website code ready hai.",
-            "ai"
-        );
+      if (websiteArea) {
+        websiteArea.innerHTML = `
+          <div class="website-result">
+            <h3>🌐 Generated Website Code</h3>
+            <pre><code>${escapeHTML(result)}</code></pre>
+          </div>
+        `;
+      }
 
     } catch (error) {
+      console.error("Website error:", error);
 
-        console.error(
-            "WEBSITE ERROR:",
-            error
-        );
+      if (websiteArea) {
+        websiteArea.innerHTML = `
+          <div class="special-error">
+            ⚠️ Website generation failed.
+          </div>
+        `;
+      }
+    }
+  }
 
+  /* =========================================================
+     WEB SEARCH
+     ========================================================= */
 
-        addMessage(
-            "❌ Website error: " +
-            error.message,
-            "ai"
-        );
-
-    } finally {
-
-        if (loading) {
-
-            loading.classList.add(
-                "hidden"
-            );
-        }
+  async function searchWeb(query) {
+    if (!query) {
+      showToast("Search query likho");
+      return;
     }
 
+    const searchArea =
+      document.getElementById("searchArea");
 
-    updateStatus(
-        "Ready to help"
-    );
-}
+    if (searchArea) {
+      searchArea.classList.remove("hidden");
 
-
-/* =========================================================
-   WEB SEARCH
-========================================================= */
-
-async function searchWeb(message) {
-
-    const area =
-        document.getElementById(
-            "searchArea"
-        );
-
-
-    const loading =
-        document.getElementById(
-            "searchLoading"
-        );
-
-
-    const result =
-        document.getElementById(
-            "searchResult"
-        );
-
-
-    if (area) {
-
-        area.classList.remove(
-            "hidden"
-        );
+      searchArea.innerHTML = `
+        <div class="special-loading">
+          🔎 Searching...
+        </div>
+      `;
     }
-
-
-    if (loading) {
-
-        loading.classList.remove(
-            "hidden"
-        );
-    }
-
 
     try {
+      const response =
+        await authFetch("/api/search-ai", {
+          method: "POST",
+          body: JSON.stringify({
+            query
+          })
+        });
 
-        const response =
-            await authFetch(
-                "/api/search-ai",
-                {
-                    method: "POST",
+      if (!response.ok) {
+        throw new Error("Search failed");
+      }
 
-                    body:
-                        JSON.stringify({
-                            message:
-                                message
-                        })
-                }
-            );
+      const data = await response.json();
 
+      const result =
+        data.answer ||
+        data.reply ||
+        data.response ||
+        data.results ||
+        "No result found.";
 
-        const data =
-            await response.json();
-
-
-        if (!response.ok) {
-
-            throw new Error(
-                data.error ||
-                "Search failed."
-            );
-        }
-
-
-        const answer =
-            data.answer ||
-            data.reply ||
-            data.summary ||
-            "";
-
-
-        if (result) {
-
-            result.innerHTML = "";
-
-
-            const div =
-                document.createElement(
-                    "div"
-                );
-
-
-            div.textContent =
-                answer;
-
-
-            result.appendChild(
-                div
-            );
-        }
-
-
-        addMessage(
-            answer,
-            "ai"
-        );
+      if (searchArea) {
+        searchArea.innerHTML = `
+          <div class="search-result">
+            ${formatAIText(
+              typeof result === "string"
+                ? result
+                : JSON.stringify(result, null, 2)
+            )}
+          </div>
+        `;
+      }
 
     } catch (error) {
+      console.error("Search error:", error);
 
-        console.error(
-            "SEARCH ERROR:",
-            error
-        );
-
-
-        addMessage(
-            "❌ Search error: " +
-            error.message,
-            "ai"
-        );
-
-    } finally {
-
-        if (loading) {
-
-            loading.classList.add(
-                "hidden"
-            );
-        }
+      if (searchArea) {
+        searchArea.innerHTML = `
+          <div class="special-error">
+            ⚠️ Search failed.
+          </div>
+        `;
+      }
     }
+  }
 
+  /* =========================================================
+     SPECIAL AREAS
+     ========================================================= */
 
-    updateStatus(
-        "Ready to help"
-    );
-}
+  function hideSpecialAreas() {
+    [
+      "imageArea",
+      "websiteArea",
+      "searchArea"
+    ].forEach((id) => {
+      const element =
+        document.getElementById(id);
 
+      if (element) {
+        element.classList.add("hidden");
+        element.innerHTML = "";
+      }
+    });
+  }
 
-/* =========================================================
-   MESSAGE
-========================================================= */
+  /* =========================================================
+     INPUT
+     ========================================================= */
 
-function addMessage(
-    text,
-    type
-) {
+  function autoResize(textarea) {
+    if (!textarea) return;
 
-    const messages =
-        document.getElementById(
-            "messages"
-        );
-
-
-    if (!messages) {
-        return;
-    }
-
-
-    const div =
-        document.createElement(
-            "div"
-        );
-
-
-    div.className =
-        `message ${type}`;
-
-
-    const content =
-        document.createElement(
-            "div"
-        );
-
-
-    content.className =
-        "message-content";
-
-
-    content.textContent =
-        String(
-            text ?? ""
-        );
-
-
-    div.appendChild(
-        content
-    );
-
-
-    messages.appendChild(
-        div
-    );
-
-
-    messages.scrollTop =
-        messages.scrollHeight;
-}
-
-
-/* =========================================================
-   INPUT RESIZE
-========================================================= */
-
-function autoResize(
-    textarea
-) {
-
-    if (!textarea) {
-        return;
-    }
-
-
+    textarea.style.height = "auto";
     textarea.style.height =
-        "auto";
+      Math.min(textarea.scrollHeight, 180) + "px";
+  }
 
-
-    textarea.style.height =
-        textarea.scrollHeight +
-        "px";
-}
-
-
-/* =========================================================
-   ENTER KEY
-========================================================= */
-
-function handleKeyPress(
-    event
-) {
-
-    if (
-        event.key === "Enter" &&
-        !event.shiftKey
-    ) {
-
-        event.preventDefault();
-
-        sendMessage();
+  function handleKeyPress(event) {
+    if (event.key === "Enter" && !event.shiftKey) {
+      event.preventDefault();
+      sendMessage();
     }
-}
+  }
 
+  /* =========================================================
+     VOICE
+     ========================================================= */
 
-/* =========================================================
-   VOICE
-========================================================= */
-
-function startVoiceInput() {
-
+  function startVoiceInput() {
     const SpeechRecognition =
-        window.SpeechRecognition ||
-        window.webkitSpeechRecognition;
-
+      window.SpeechRecognition ||
+      window.webkitSpeechRecognition;
 
     if (!SpeechRecognition) {
-
-        alert(
-            "Is browser me Voice Input supported nahi hai."
-        );
-
-        return;
+      showToast(
+        "Is browser me voice input supported nahi hai."
+      );
+      return;
     }
-
 
     const recognition =
-        new SpeechRecognition();
+      new SpeechRecognition();
 
+    recognition.lang = "hi-IN";
+    recognition.interimResults = false;
+    recognition.maxAlternatives = 1;
 
-    recognition.lang =
-        "hi-IN";
+    recognition.onstart = () => {
+      showToast("🎤 Listening...");
+    };
 
+    recognition.onresult = (event) => {
+      const text =
+        event.results[0][0].transcript;
 
-    recognition.interimResults =
-        false;
+      const input =
+        document.getElementById("messageInput") ||
+        document.getElementById("userInput");
 
+      if (input) {
+        input.value +=
+          (input.value ? " " : "") + text;
 
-    recognition.continuous =
-        false;
+        autoResize(input);
+      }
+    };
 
+    recognition.onerror = (event) => {
+      console.error(
+        "Voice error:",
+        event.error
+      );
 
-    recognition.onresult =
-        function(event) {
+      showToast("Voice input failed");
+    };
 
-            const text =
-                event.results[0][0]
-                    .transcript;
+    recognition.start();
+  }
 
+  /* =========================================================
+     THEME
+     ========================================================= */
 
-            const input =
-                document.getElementById(
-                    "userInput"
-                );
+  function loadTheme() {
+    const theme =
+      localStorage.getItem("novex-theme");
 
-
-            if (input) {
-
-                input.value =
-                    text;
-
-
-                autoResize(
-                    input
-                );
-            }
-        };
-
-
-    recognition.onerror =
-        function(event) {
-
-            console.error(
-                "VOICE ERROR:",
-                event.error
-            );
-        };
-
-
-    try {
-
-        recognition.start();
-
-    } catch (error) {
-
-        console.error(
-            "VOICE START ERROR:",
-            error
-        );
+    if (theme === "light") {
+      document.body.classList.add("light-theme");
     }
-}
+  }
 
-
-/* =========================================================
-   THEME MENU
-========================================================= */
-
-function toggleThemeMenu() {
-
-    const menu =
-        document.getElementById(
-            "themeMenu"
-        );
-
-
-    if (menu) {
-
-        menu.classList.toggle(
-            "show"
-        );
-    }
-}
-
-
-/* =========================================================
-   SET THEME
-========================================================= */
-
-function setTheme(
-    theme
-) {
-
-    document.body.classList.remove(
-        "theme-black",
-        "theme-white"
+  function toggleTheme() {
+    document.body.classList.toggle(
+      "light-theme"
     );
 
-
-    document.body.classList.add(
-        `theme-${theme}`
-    );
-
+    const isLight =
+      document.body.classList.contains(
+        "light-theme"
+      );
 
     localStorage.setItem(
-        "novex-theme",
-        theme
+      "novex-theme",
+      isLight ? "light" : "dark"
     );
+  }
 
+  /* =========================================================
+     SIDEBAR
+     ========================================================= */
 
-    const menu =
-        document.getElementById(
-            "themeMenu"
-        );
-
-
-    if (menu) {
-
-        menu.classList.remove(
-            "show"
-        );
-    }
-}
-
-
-/* =========================================================
-   LOAD THEME
-========================================================= */
-
-function loadTheme() {
-
-    const theme =
-        localStorage.getItem(
-            "novex-theme"
-        );
-
-
-    setTheme(
-        theme || "black"
-    );
-}
-
-
-/* =========================================================
-   SIDEBAR
-========================================================= */
-
-function toggleSidebar() {
-
+  function toggleSidebar() {
     const sidebar =
-        document.getElementById(
-            "sidebar"
-        );
-
+      document.getElementById("sidebar");
 
     if (sidebar) {
-
-        sidebar.classList.toggle(
-            "open"
-        );
+      sidebar.classList.toggle("collapsed");
     }
-}
+  }
 
+  /* =========================================================
+     EVENTS
+     ========================================================= */
 
-/* =========================================================
-   SPECIAL AREAS
-========================================================= */
+  function setupAppEvents() {
+    const input =
+      document.getElementById("messageInput") ||
+      document.getElementById("userInput");
 
-function hideSpecialAreas() {
+    if (input && !input.dataset.novexBound) {
+      input.dataset.novexBound = "true";
 
-    [
-        "imageArea",
-        "websiteArea",
-        "searchArea"
-    ].forEach(
-        id => {
+      input.addEventListener(
+        "input",
+        () => autoResize(input)
+      );
 
-            const element =
-                document.getElementById(
-                    id
-                );
+      input.addEventListener(
+        "keydown",
+        handleKeyPress
+      );
+    }
 
+    const themeButton =
+      document.getElementById("themeToggle");
 
-            if (element) {
+    if (
+      themeButton &&
+      !themeButton.dataset.novexBound
+    ) {
+      themeButton.dataset.novexBound = "true";
 
-                element.classList.add(
-                    "hidden"
-                );
-            }
-        }
+      themeButton.addEventListener(
+        "click",
+        toggleTheme
+      );
+    }
+  }
+
+  /* =========================================================
+     TOAST
+     ========================================================= */
+
+  function showToast(message) {
+    let toast =
+      document.getElementById("novexToast");
+
+    if (!toast) {
+      toast =
+        document.createElement("div");
+
+      toast.id = "novexToast";
+      toast.className = "novex-toast";
+
+      document.body.appendChild(toast);
+    }
+
+    toast.textContent = message;
+    toast.classList.add("show");
+
+    clearTimeout(
+      window.__novexToastTimer
     );
-}
 
+    window.__novexToastTimer =
+      setTimeout(() => {
+        toast.classList.remove("show");
+      }, 2500);
+  }
 
-/* =========================================================
-   LOGIN ERROR
-========================================================= */
+  /* =========================================================
+     LOGIN ERROR
+     ========================================================= */
 
-function showLoginError(
-    message
-) {
-
+  function showLoginError(message) {
     const signIn =
-        document.getElementById(
-            "clerkSignIn"
-        );
+      document.getElementById("clerkSignIn");
 
+    if (!signIn) return;
 
-    if (!signIn) {
-        return;
-    }
+    signIn.innerHTML = `
+      <div class="auth-error">
+        ⚠️ ${escapeHTML(message)}
+      </div>
+    `;
+  }
 
+  /* =========================================================
+     GLOBAL FUNCTIONS
+     ========================================================= */
 
-    signIn.innerHTML = "";
+  window.sendMessage = sendMessage;
+  window.askAI = askAI;
+  window.newChat = newChat;
+  window.generateImage = generateImage;
+  window.generateWebsite = generateWebsite;
+  window.searchWeb = searchWeb;
+  window.startVoiceInput = startVoiceInput;
+  window.handleKeyPress = handleKeyPress;
+  window.autoResize = autoResize;
+  window.toggleTheme = toggleTheme;
+  window.toggleSidebar = toggleSidebar;
+  window.clearHistory = clearHistory;
 
-
-    const wrapper =
-        document.createElement(
-            "div"
-        );
-
-
-    wrapper.style.padding =
-        "20px";
-
-
-    wrapper.style.textAlign =
-        "center";
-
-
-    wrapper.style.color =
-        "#ff5555";
-
-
-    wrapper.style.fontFamily =
-        "Arial,sans-serif";
-
-
-    wrapper.textContent =
-        message;
-
-
-    signIn.appendChild(
-        wrapper
-    );
-}
-
-
-/* =========================================================
-   HTML ESCAPE
-========================================================= */
-
-function escapeHtml(
-    text
-) {
-
-    const div =
-        document.createElement(
-            "div"
-        );
-
-
-    div.textContent =
-        String(
-            text ?? ""
-        );
-
-
-    return div.innerHTML;
-}
-
-
-/* =========================================================
-   OUTSIDE CLICK
-========================================================= */
-
-document.addEventListener(
-    "click",
-    function(event) {
-
-        const menu =
-            document.getElementById(
-                "themeMenu"
-            );
-
-
-        if (!menu) {
-            return;
-        }
-
-
-        if (
-            !menu.contains(
-                event.target
-            ) &&
-            !event.target.closest(
-                '[title="Theme"]'
-            )
-        ) {
-
-            menu.classList.remove(
-                "show"
-            );
-        }
-    }
-);
-```
+})();

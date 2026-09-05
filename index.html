@@ -1,14 +1,44 @@
+
 <!DOCTYPE html>
-
-<html lang="hi">
-
+<html lang="en">
 <head>
-
   <meta charset="UTF-8">
 
-  <!-- GOOGLE ANALYTICS -->
+  <meta
+    name="viewport"
+    content="width=device-width, initial-scale=1.0"
+  >
 
-  <script async src="https://www.googletagmanager.com/gtag/js?id=G-K6FBW6ZZSF"></script>
+  <meta
+    name="description"
+    content="Novex AI — Your intelligent AI assistant for chat, search, image generation and website creation."
+  >
+
+  <meta
+    name="keywords"
+    content="Novex AI, AI assistant, AI chat, image generator, website generator"
+  >
+
+  <meta
+    name="author"
+    content="Novex AI"
+  >
+
+  <meta
+    name="google-site-verification"
+    content="Ll376QN6E8GAIXULW1EQ43Q95vtw3HbE262z6eOYYyk"
+  >
+
+  <title>Novex AI — Intelligent AI Assistant</title>
+
+  <!-- =====================================================
+       GOOGLE ANALYTICS
+       ===================================================== -->
+
+  <script
+    async
+    src="https://www.googletagmanager.com/gtag/js?id=G-K6FBW6ZZSF">
+  </script>
 
   <script>
     window.dataLayer = window.dataLayer || [];
@@ -17,21 +47,13 @@
       dataLayer.push(arguments);
     }
 
-    gtag('js', new Date());
-    gtag('config', 'G-K6FBW6ZZSF');
+    gtag("js", new Date());
+    gtag("config", "G-K6FBW6ZZSF");
   </script>
-
-<meta
-name="viewport"
-content="width=device-width, initial-scale=1.0"
-
->
-
-  <title>Novex AI</title>
 
   <!-- =====================================================
        CLERK UI
-  ====================================================== -->
+       ===================================================== -->
 
   <script
     defer
@@ -42,7 +64,7 @@ content="width=device-width, initial-scale=1.0"
 
   <!-- =====================================================
        CLERK JS
-  ====================================================== -->
+       ===================================================== -->
 
   <script
     defer
@@ -54,508 +76,600 @@ content="width=device-width, initial-scale=1.0"
 
   <!-- =====================================================
        PUTER AI
-  ====================================================== -->
+       ===================================================== -->
 
   <script src="https://js.puter.com/v2/"></script>
 
   <!-- =====================================================
-       NOVEX CSS
-  ====================================================== -->
+       STYLES
+       ===================================================== -->
 
-  <link
-    rel="stylesheet"
-    href="style.css"
-  >
-
+  <link rel="stylesheet" href="style.css">
 </head>
 
 <body>
 
-<!-- =======================================================
-     AUTH SCREEN
-======================================================== -->
-
-<div
-  id="authScreen"
-  class="auth-screen"
->
-
-  <div class="auth-glow"></div>
-
-  <div class="auth-card">
-
-```
-<div class="auth-logo">
-  N
-</div>
-
-<h1>
-  Novex AI
-</h1>
-
-<p class="auth-subtitle">
-  Your intelligent AI assistant
-</p>
-
-<div
-  id="clerkSignIn"
-  class="clerk-login"
->
-
-  <div class="auth-loading">
-    Loading secure login...
-  </div>
-
-</div>
-```
-
-  </div>
-
-</div>
-
-<!-- =======================================================
-     APP
-======================================================== -->
-
-<div
-  id="app"
-  class="app hidden"
->
-
-  <!-- SIDEBAR -->
-
-  <aside
-    class="sidebar"
-    id="sidebar"
-  >
-
-```
-<div class="brand">
-
-  <div class="logo">
-    N
-  </div>
-
-  <div>
-
-    <h2>
-      Novex AI
-    </h2>
-
-    <span>
-      One AI. Everything.
-    </span>
-
-  </div>
-
-</div>
-
-
-<!-- NEW CHAT -->
-
-<button
-  class="new-chat"
-  onclick="newChat()"
->
-  ＋ New Chat
-</button>
-
-
-<!-- USER -->
-
-<div class="user-card">
+  <!-- =====================================================
+       AUTH / LOGIN SCREEN
+       ===================================================== -->
 
   <div
-    id="userAvatar"
-    class="user-avatar"
+    id="authScreen"
+    class="auth-screen"
   >
-    👤
+
+    <div class="auth-glow"></div>
+
+    <div class="auth-card">
+
+      <div class="auth-logo">
+        N
+      </div>
+
+      <h1>
+        Novex AI
+      </h1>
+
+      <p class="auth-subtitle">
+        Your intelligent AI assistant
+      </p>
+
+      <div
+        id="clerkSignIn"
+        class="clerk-login"
+      >
+
+        <div class="auth-loading">
+          Loading secure login...
+        </div>
+
+      </div>
+
+    </div>
+
   </div>
 
-  <div class="user-info">
-
-    <strong
-      id="loggedUsername"
-    >
-      User
-    </strong>
-
-    <span>
-      Google account
-    </span>
-
-  </div>
-
-  <div
-    id="clerkUserButton"
-    class="clerk-user-button"
-  ></div>
-
-</div>
-
-
-<!-- CHAT HISTORY -->
-
-<div
-  class="section-title history-heading"
->
-
-  <span>
-    CHAT HISTORY
-  </span>
-
-  <button
-    onclick="clearHistory()"
-  >
-    Clear
-  </button>
-
-</div>
-
-
-<div
-  id="historyList"
-  class="history-list"
-></div>
-
-
-<!-- ONLINE -->
-
-<div class="sidebar-bottom">
-
-  <span class="online-dot"></span>
-
-  Novex Online
-
-</div>
-```
-
-  </aside>
 
   <!-- =====================================================
-       MAIN
-  ====================================================== -->
+       MAIN APPLICATION
+       ===================================================== -->
 
-  <main class="main">
-
-```
-<!-- TOP BAR -->
-
-<header class="topbar">
-
-  <button
-    class="menu-btn"
-    onclick="toggleSidebar()"
+  <div
+    id="app"
+    class="app hidden"
   >
-    ☰
-  </button>
 
+    <!-- ===================================================
+         SIDEBAR
+         =================================================== -->
 
-  <div class="top-brand">
-
-    <div class="small-logo">
-      N
-    </div>
-
-    <div>
-
-      <strong>
-        Novex AI
-      </strong>
-
-      <span id="statusText">
-        Ready to help
-      </span>
-
-    </div>
-
-  </div>
-
-
-  <div class="top-actions">
-
-    <button
-      onclick="newChat()"
-      title="New Chat"
+    <aside
+      id="sidebar"
+      class="sidebar"
     >
-      ＋
-    </button>
 
-    <button
-      onclick="toggleThemeMenu()"
-      title="Theme"
-    >
-      🎨
-    </button>
+      <!-- LOGO -->
 
-  </div>
+      <div class="sidebar-header">
 
-</header>
+        <div class="brand">
 
+          <div class="brand-logo">
+            N
+          </div>
 
-<!-- =====================================================
-     THEME MENU
-====================================================== -->
+          <div class="brand-text">
+            <strong>Novex</strong>
+            <span>AI</span>
+          </div>
 
-<div
-  class="theme-menu"
-  id="themeMenu"
->
+        </div>
 
-  <h3>
-    Theme
-  </h3>
+        <button
+          class="sidebar-toggle"
+          type="button"
+          onclick="toggleSidebar()"
+          aria-label="Toggle sidebar"
+        >
+          ☰
+        </button>
 
-  <button
-    onclick="setTheme('black')"
-  >
-    ⚫ Black
-  </button>
-
-  <button
-    onclick="setTheme('white')"
-  >
-    ⚪ White
-  </button>
-
-</div>
-
-
-<!-- =====================================================
-     CONTENT
-====================================================== -->
-
-<section class="content">
-
-
-  <!-- WELCOME -->
-
-  <div
-    id="welcome"
-    class="welcome"
-  >
-
-    <div class="hero-logo">
-      N
-    </div>
-
-    <h1>
-
-      Welcome to
-
-      <span>
-        Novex AI
-      </span>
-
-    </h1>
-
-    <p>
-
-      Ask anything. Novex automatically understands
-      your request and chooses the right AI system.
-
-    </p>
-
-  </div>
-
-
-  <!-- CHAT MESSAGES -->
-
-  <div
-    id="messages"
-  ></div>
-
-
-  <!-- ===================================================
-       IMAGE GENERATOR
-  ==================================================== -->
-
-  <div
-    id="imageArea"
-    class="special-area hidden"
-  >
-
-    <div class="special-card">
-
-      <div class="special-icon">
-        🖼️
       </div>
 
-      <h2>
-        AI Image Generator
-      </h2>
 
-      <p
-        id="imagePromptText"
-      ></p>
+      <!-- NEW CHAT -->
 
-      <div
-        id="imageLoading"
-        class="loading hidden"
+      <div class="sidebar-actions">
+
+        <button
+          class="new-chat-btn"
+          type="button"
+          onclick="newChat()"
+        >
+
+          <span class="new-chat-icon">
+            +
+          </span>
+
+          <span>
+            New Chat
+          </span>
+
+        </button>
+
+      </div>
+
+
+      <!-- HISTORY -->
+
+      <div class="history-section">
+
+        <div class="history-title">
+          Recent Chats
+        </div>
+
+        <div
+          id="historyList"
+          class="history-list"
+        >
+        </div>
+
+      </div>
+
+
+      <!-- SIDEBAR BOTTOM -->
+
+      <div class="sidebar-bottom">
+
+        <button
+          id="themeToggle"
+          class="sidebar-option"
+          type="button"
+        >
+
+          <span>
+            ◐
+          </span>
+
+          <span>
+            Theme
+          </span>
+
+        </button>
+
+
+        <button
+          class="sidebar-option"
+          type="button"
+          onclick="clearHistory()"
+        >
+
+          <span>
+            🗑
+          </span>
+
+          <span>
+            Clear History
+          </span>
+
+        </button>
+
+
+        <!-- USER -->
+
+        <div class="sidebar-user">
+
+          <div
+            id="userAvatar"
+            class="user-avatar"
+          >
+            U
+          </div>
+
+          <div class="user-info">
+
+            <div
+              id="loggedUsername"
+              class="logged-username"
+            >
+              User
+            </div>
+
+            <div class="user-status">
+              Online
+            </div>
+
+          </div>
+
+        </div>
+
+      </div>
+
+    </aside>
+
+
+    <!-- ===================================================
+         MAIN CONTENT
+         =================================================== -->
+
+    <main class="main-content">
+
+
+      <!-- =================================================
+           TOP BAR
+           ================================================= -->
+
+      <header class="topbar">
+
+        <div class="topbar-left">
+
+          <div class="mobile-brand">
+
+            <div class="brand-logo">
+              N
+            </div>
+
+            <span>
+              Novex AI
+            </span>
+
+          </div>
+
+        </div>
+
+
+        <div class="topbar-right">
+
+          <div
+            id="clerkUserButton"
+            class="clerk-user-button"
+          >
+          </div>
+
+        </div>
+
+      </header>
+
+
+      <!-- =================================================
+           CHAT AREA
+           ================================================= -->
+
+      <section
+        id="chatArea"
+        class="chat-area"
       >
 
-        <div class="spinner"></div>
 
-        <span>
-          Image generate ho rahi hai...
-        </span>
+        <!-- WELCOME -->
+
+        <div
+          id="welcomeScreen"
+          class="welcome-screen"
+        >
+
+          <div class="welcome-logo">
+            N
+          </div>
+
+          <h2>
+            Welcome to Novex AI
+          </h2>
+
+          <p>
+            Your intelligent AI assistant
+          </p>
+
+
+          <!-- QUICK ACTIONS -->
+
+          <div class="quick-actions">
+
+
+            <button
+              class="quick-action"
+              type="button"
+              onclick="document.getElementById('messageInput').value='Explain artificial intelligence in simple words'; document.getElementById('messageInput').focus();"
+            >
+
+              <span class="quick-icon">
+                ✨
+              </span>
+
+              <span>
+                Ask anything
+              </span>
+
+            </button>
+
+
+            <button
+              class="quick-action"
+              type="button"
+              onclick="document.getElementById('messageInput').value='Create a modern website for my business'; document.getElementById('messageInput').focus();"
+            >
+
+              <span class="quick-icon">
+                🌐
+              </span>
+
+              <span>
+                Create website
+              </span>
+
+            </button>
+
+
+            <button
+              class="quick-action"
+              type="button"
+              onclick="document.getElementById('messageInput').value='Create an image of a futuristic city'; document.getElementById('messageInput').focus();"
+            >
+
+              <span class="quick-icon">
+                🎨
+              </span>
+
+              <span>
+                Generate image
+              </span>
+
+            </button>
+
+
+            <button
+              class="quick-action"
+              type="button"
+              onclick="document.getElementById('messageInput').value='Search the web for the latest AI news'; document.getElementById('messageInput').focus();"
+            >
+
+              <span class="quick-icon">
+                🔎
+              </span>
+
+              <span>
+                Web search
+              </span>
+
+            </button>
+
+          </div>
+
+        </div>
+
+
+        <!-- =================================================
+             MESSAGES
+             ================================================= -->
+
+        <div
+          id="messages"
+          class="messages"
+        >
+        </div>
+
+
+        <!-- =================================================
+             IMAGE AREA
+             ================================================= -->
+
+        <div
+          id="imageArea"
+          class="special-area image-area hidden"
+        >
+        </div>
+
+
+        <!-- =================================================
+             WEBSITE AREA
+             ================================================= -->
+
+        <div
+          id="websiteArea"
+          class="special-area website-area hidden"
+        >
+        </div>
+
+
+        <!-- =================================================
+             SEARCH AREA
+             ================================================= -->
+
+        <div
+          id="searchArea"
+          class="special-area search-area hidden"
+        >
+        </div>
+
+      </section>
+
+
+      <!-- =================================================
+           COMPOSER
+           ================================================= -->
+
+      <div class="composer-wrapper">
+
+        <div
+          class="composer"
+        >
+
+          <textarea
+            id="messageInput"
+            class="message-input"
+            placeholder="Message Novex AI..."
+            rows="1"
+            autocomplete="off"
+            spellcheck="true"
+          ></textarea>
+
+
+          <!-- VOICE -->
+
+          <button
+            class="composer-btn voice-btn"
+            type="button"
+            onclick="startVoiceInput()"
+            aria-label="Voice input"
+            title="Voice input"
+          >
+            🎤
+          </button>
+
+
+          <!-- SEND -->
+
+          <button
+            class="composer-btn send-btn"
+            type="button"
+            onclick="sendMessage()"
+            aria-label="Send message"
+            title="Send message"
+          >
+            ➤
+          </button>
+
+        </div>
+
+
+        <div class="composer-hint">
+          Novex AI can make mistakes. Check important information.
+        </div>
 
       </div>
 
-      <div
-        id="imageResult"
-      ></div>
-
-    </div>
+    </main>
 
   </div>
 
 
-  <!-- ===================================================
-       WEBSITE BUILDER
-  ==================================================== -->
+  <!-- =====================================================
+       CLERK UI INITIALIZATION
+       ===================================================== -->
 
-  <div
-    id="websiteArea"
-    class="special-area hidden"
-  >
+  <script>
+    window.__novexClerkReady = false;
 
-    <div class="special-card">
+    window.addEventListener("load", async function () {
 
-      <div class="special-icon">
-        🌐
-      </div>
+      try {
 
-      <h2>
-        Website Builder
-      </h2>
+        let attempts = 0;
 
-      <div
-        id="websiteLoading"
-        class="loading hidden"
-      >
+        /*
+          Wait for both Clerk JS and Clerk UI bundle.
+        */
 
-        <div class="spinner"></div>
+        while (
+          (
+            typeof window.Clerk === "undefined" ||
+            typeof window.__internal_ClerkUICtor === "undefined"
+          ) &&
+          attempts < 150
+        ) {
 
-        <span>
-          Website code ban raha hai...
-        </span>
+          await new Promise(
+            resolve => setTimeout(resolve, 100)
+          );
 
-      </div>
-
-      <div
-        id="websiteResult"
-      ></div>
-
-    </div>
-
-  </div>
+          attempts++;
+        }
 
 
-  <!-- ===================================================
-       WEB SEARCH
-  ==================================================== -->
+        /*
+          Clerk JS missing
+        */
 
-  <div
-    id="searchArea"
-    class="special-area hidden"
-  >
+        if (typeof window.Clerk === "undefined") {
 
-    <div class="special-card">
+          console.error(
+            "NOVEX: Clerk JS load nahi hua."
+          );
 
-      <div class="special-icon">
-        🔎
-      </div>
-
-      <h2>
-        Web Search
-      </h2>
-
-      <div
-        id="searchLoading"
-        class="loading hidden"
-      >
-
-        <div class="spinner"></div>
-
-        <span>
-          Internet par search ho raha hai...
-        </span>
-
-      </div>
-
-      <div
-        id="searchResult"
-      ></div>
-
-    </div>
-
-  </div>
+          return;
+        }
 
 
-</section>
+        /*
+          Clerk UI missing
+        */
+
+        if (
+          typeof window.__internal_ClerkUICtor === "undefined"
+        ) {
+
+          console.error(
+            "NOVEX: Clerk UI bundle load nahi hua."
+          );
+
+          return;
+        }
 
 
-<!-- =====================================================
-     CHAT COMPOSER
-====================================================== -->
+        /*
+          IMPORTANT:
+          Load Clerk WITH UI components.
+        */
 
-<footer class="composer-area">
+        await window.Clerk.load({
 
-  <div class="composer">
+          ui: {
+            ClerkUI:
+              window.__internal_ClerkUICtor
+          },
 
-    <textarea
-      id="userInput"
-      rows="1"
-      placeholder="Ask Novex anything..."
-      onkeydown="handleKeyPress(event)"
-      oninput="autoResize(this)"
-    ></textarea>
+          signInForceRedirectUrl:
+            window.location.href,
 
+          signUpForceRedirectUrl:
+            window.location.href
 
-    <button
-      class="voice-button"
-      onclick="startVoiceInput()"
-      title="Voice"
-    >
-      🎤
-    </button>
+        });
 
 
-    <button
-      class="send-button"
-      onclick="sendMessage()"
-      title="Send"
-    >
-      ➤
-    </button>
-
-  </div>
+        console.log(
+          "NOVEX: Clerk + UI successfully loaded."
+        );
 
 
-  <div class="composer-hint">
+        /*
+          Tell script.js that Clerk is ready.
+        */
 
-    Novex automatically chooses the right AI tool
+        window.__novexClerkReady = true;
 
-  </div>
 
-</footer>
-```
+        /*
+          Also dispatch an event in case script.js
+          is already waiting for it.
+        */
 
-  </main>
+        window.dispatchEvent(
+          new CustomEvent(
+            "novex-clerk-ready"
+          )
+        );
 
-</div>
 
-<!-- TOAST -->
+      } catch (error) {
 
-<div id="toast"></div>
+        console.error(
+          "NOVEX CLERK LOAD ERROR:",
+          error
+        );
 
-<!-- =====================================================
-     NOVEX JAVASCRIPT
-====================================================== -->
+      }
 
-<script src="script.js"></script>
+    });
+  </script>
+
+
+  <!-- =====================================================
+       NOVEX SCRIPT
+       ===================================================== -->
+
+  <script src="script.js"></script>
 
 </body>
-
 </html>
+
