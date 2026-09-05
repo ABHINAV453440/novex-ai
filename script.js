@@ -1,8 +1,8 @@
-````javascript
 /* =========================================================
    NOVEX AI — COMPLETE SCRIPT
    Clerk + Chat + History + Image + Website + Search
    + PDF / FILE ATTACHMENT UI
+   + STRONG CLERK AUTHENTICATION
    ========================================================= */
 
 (() => {
@@ -16,13 +16,11 @@
   let appStarted = false;
   let loginMounted = false;
   let loginWatcherStarted = false;
-
   let selectedFile = null;
   let isSending = false;
 
   const sleep = (ms) =>
     new Promise((resolve) => setTimeout(resolve, ms));
-
 
   /* =========================================================
      START
@@ -34,7 +32,6 @@
     setupFileAttachment();
   });
 
-
   /* =========================================================
      CLERK INITIALIZATION
      ========================================================= */
@@ -43,15 +40,23 @@
     try {
       let attempts = 0;
 
-      while (!window.Clerk && attempts < 150) {
+      /* Wait for Clerk JS */
+      while (
+        typeof window.Clerk === "undefined" &&
+        attempts < 200
+      ) {
         await sleep(100);
         attempts++;
       }
 
-      if (!window.Clerk) {
+      if (typeof window.Clerk === "undefined") {
+        console.error("NOVEX: Clerk JS load nahi hua.");
         showLoginError("Clerk load nahi ho paya.");
         return;
       }
+
+      /* Wait for Clerk UI initialization from index.html */
+      attempts = 0;
 
       while (
         !window.__novexClerkReady &&
@@ -76,8 +81,14 @@
       clerkReady = true;
 
       console.log("NOVEX: Clerk ready.");
+      console.log(
+        "NOVEX: Signed in =",
+        Boolean(window.Clerk.isSignedIn)
+      );
 
+      /* Open app if already signed in */
       if (window.Clerk.isSignedIn) {
+        await waitForClerkSession();
         await openNovexApp();
       } else {
         showLogin();
@@ -97,6 +108,33 @@
     }
   }
 
+  /* =========================================================
+     WAIT FOR CLERK SESSION
+     ========================================================= */
+
+  async function waitForClerkSession() {
+    let attempts = 0;
+
+    while (
+      attempts < 100 &&
+      window.Clerk &&
+      !window.Clerk.session
+    ) {
+      await sleep(100);
+      attempts++;
+    }
+
+    if (window.Clerk && window.Clerk.session) {
+      console.log("NOVEX: Clerk session ready.");
+      return true;
+    }
+
+    console.warn(
+      "NOVEX: Clerk session ready nahi hua."
+    );
+
+    return false;
+  }
 
   /* =========================================================
      CLERK SESSION LISTENER
@@ -112,12 +150,20 @@
 
     window.Clerk.addListener(async (state) => {
       try {
-        if (state && state.session) {
+        if (
+          state &&
+          state.session
+        ) {
+          await waitForClerkSession();
           await openNovexApp();
-        } else if (window.Clerk.isSignedIn) {
+        } else if (
+          window.Clerk.isSignedIn
+        ) {
+          await waitForClerkSession();
           await openNovexApp();
         } else {
           appStarted = false;
+          loginMounted = false;
           showLogin();
         }
       } catch (error) {
@@ -128,7 +174,6 @@
       }
     });
   }
-
 
   /* =========================================================
      LOGIN
@@ -154,7 +199,11 @@
       app.classList.add("hidden");
     }
 
-    if (!loginMounted) {
+    if (
+      !loginMounted &&
+      window.Clerk &&
+      typeof window.Clerk.mountSignIn === "function"
+    ) {
       try {
         signIn.innerHTML = "";
 
@@ -183,7 +232,6 @@
     watchLogin();
   }
 
-
   function watchLogin() {
     if (loginWatcherStarted) {
       return;
@@ -192,13 +240,21 @@
     loginWatcherStarted = true;
 
     const check = async () => {
-      if (
-        clerkReady &&
-        window.Clerk &&
-        window.Clerk.isSignedIn
-      ) {
-        await openNovexApp();
-        return;
+      try {
+        if (
+          clerkReady &&
+          window.Clerk &&
+          window.Clerk.isSignedIn
+        ) {
+          await waitForClerkSession();
+          await openNovexApp();
+          return;
+        }
+      } catch (error) {
+        console.error(
+          "Login watcher error:",
+          error
+        );
       }
 
       setTimeout(check, 1000);
@@ -206,7 +262,6 @@
 
     check();
   }
-
 
   /* =========================================================
      OPEN APP
@@ -224,6 +279,9 @@
     if (appStarted) {
       return;
     }
+
+    /* Make sure Clerk session exists */
+    await waitForClerkSession();
 
     appStarted = true;
 
@@ -244,6 +302,7 @@
     try {
       await setupUser();
       await loadHistory();
+
       setupAppEvents();
 
       console.log(
@@ -255,9 +314,14 @@
         "App startup error:",
         error
       );
+
+      /*
+        If startup auth fails, don't permanently
+        lock the application.
+      */
+      appStarted = false;
     }
   }
-
 
   /* =========================================================
      USER
@@ -269,7 +333,9 @@
         await authFetch("/api/me");
 
       if (!response.ok) {
-        throw new Error("User API failed");
+        throw new Error(
+          `User API failed: ${response.status}`
+        );
       }
 
       const data =
@@ -321,12 +387,11 @@
     }
   }
 
-
   /* =========================================================
-     AUTH FETCH
+     GET CLERK AUTH TOKEN
      ========================================================= */
 
-  async function getAuthToken() {
+  async function getAuthToken(forceRefresh = false) {
     try {
       if (
         !window.Clerk ||
@@ -334,14 +399,35 @@
         typeof window.Clerk.session.getToken !==
           "function"
       ) {
+        console.warn(
+          "NOVEX: Clerk session/token unavailable."
+        );
+
         return null;
       }
 
-      return await window.Clerk.session.getToken();
+      const options = forceRefresh
+        ? { skipCache: true }
+        : {};
+
+      const token =
+        await window.Clerk.session.getToken(
+          options
+        );
+
+      if (!token) {
+        console.warn(
+          "NOVEX: Clerk token empty."
+        );
+
+        return null;
+      }
+
+      return token;
 
     } catch (error) {
       console.error(
-        "Token error:",
+        "NOVEX token error:",
         error
       );
 
@@ -349,38 +435,144 @@
     }
   }
 
+  /* =========================================================
+     AUTHENTICATED FETCH
+     ========================================================= */
 
   async function authFetch(
     url,
-    options = {}
+    options = {},
+    retry = true
   ) {
-    const token =
-      await getAuthToken();
+    try {
+      /*
+        Make sure Clerk is ready.
+      */
+      if (
+        !window.Clerk ||
+        !window.Clerk.isSignedIn
+      ) {
+        throw new Error(
+          "User is not signed in."
+        );
+      }
 
-    const headers = {
-      ...(options.headers || {})
-    };
+      await waitForClerkSession();
 
-    if (token) {
-      headers.Authorization =
-        `Bearer ${token}`;
+      /*
+        Get current Clerk session token.
+      */
+      let token =
+        await getAuthToken(false);
+
+      /*
+        If token is unavailable, wait and retry
+        token generation once.
+      */
+      if (!token) {
+        await sleep(500);
+        token =
+          await getAuthToken(true);
+      }
+
+      const headers =
+        new Headers(
+          options.headers || {}
+        );
+
+      /*
+        IMPORTANT:
+        Send Clerk session token to Express.
+      */
+      if (token) {
+        headers.set(
+          "Authorization",
+          `Bearer ${token}`
+        );
+      }
+
+      /*
+        Automatically set JSON header
+        when body exists.
+      */
+      if (
+        options.body &&
+        !headers.has("Content-Type")
+      ) {
+        headers.set(
+          "Content-Type",
+          "application/json"
+        );
+      }
+
+      /*
+        Credentials are also included for Clerk
+        cookie/session support.
+      */
+      const response =
+        await fetch(url, {
+          ...options,
+          headers,
+          credentials: "include"
+        });
+
+      /*
+        If backend says 401, get a fresh Clerk token
+        and retry the exact request once.
+      */
+      if (
+        response.status === 401 &&
+        retry
+      ) {
+        console.warn(
+          "NOVEX: 401 received. Refreshing Clerk token..."
+        );
+
+        const freshToken =
+          await getAuthToken(true);
+
+        if (freshToken) {
+          const retryHeaders =
+            new Headers(
+              options.headers || {}
+            );
+
+          retryHeaders.set(
+            "Authorization",
+            `Bearer ${freshToken}`
+          );
+
+          if (
+            options.body &&
+            !retryHeaders.has(
+              "Content-Type"
+            )
+          ) {
+            retryHeaders.set(
+              "Content-Type",
+              "application/json"
+            );
+          }
+
+          return fetch(url, {
+            ...options,
+            headers: retryHeaders,
+            credentials: "include"
+          });
+        }
+      }
+
+      return response;
+
+    } catch (error) {
+      console.error(
+        "NOVEX authFetch error:",
+        error
+      );
+
+      throw error;
     }
-
-    if (
-      options.body &&
-      !headers["Content-Type"]
-    ) {
-      headers["Content-Type"] =
-        "application/json";
-    }
-
-    return fetch(url, {
-      ...options,
-      headers,
-      credentials: "include"
-    });
   }
-
 
   /* =========================================================
      CHAT
@@ -406,12 +598,6 @@
     const message =
       input.value.trim();
 
-    /*
-      File selected but no message:
-      allow sending a simple attachment
-      message for now.
-    */
-
     if (
       !message &&
       !selectedFile
@@ -427,11 +613,6 @@
     input.value = "";
 
     autoResize(input);
-
-    /*
-      Current backend accepts text only.
-      Attachment UI is prepared here.
-    */
 
     let displayMessage =
       message;
@@ -451,12 +632,6 @@
     showTyping();
 
     try {
-      /*
-        IMPORTANT:
-        Existing /api/chat contract
-        remains unchanged.
-      */
-
       const response =
         await authFetch(
           "/api/chat",
@@ -471,8 +646,21 @@
       hideTyping();
 
       if (!response.ok) {
+        let errorMessage =
+          `AI request failed: ${response.status}`;
+
+        try {
+          const errorData =
+            await response.json();
+
+          if (errorData?.error) {
+            errorMessage =
+              errorData.error;
+          }
+        } catch (_) {}
+
         throw new Error(
-          `AI request failed: ${response.status}`
+          errorMessage
         );
       }
 
@@ -491,11 +679,6 @@
       );
 
       await loadHistory();
-
-      /*
-        Remove attachment after
-        successful send.
-      */
 
       if (fileAtSendTime) {
         clearSelectedFile();
@@ -523,7 +706,6 @@
     }
   }
 
-
   /* =========================================================
      ASK AI
      ========================================================= */
@@ -547,7 +729,7 @@
 
       if (!response.ok) {
         throw new Error(
-          "AI request failed"
+          `AI request failed: ${response.status}`
         );
       }
 
@@ -570,7 +752,6 @@
       return "";
     }
   }
-
 
   /* =========================================================
      MESSAGE UI
@@ -635,7 +816,6 @@
       messages.scrollHeight;
   }
 
-
   /* =========================================================
      FORMAT AI TEXT
      ========================================================= */
@@ -653,16 +833,14 @@
     /*
       Code blocks
     */
-
     safe = safe.replace(
       /```([\s\S]*?)```/g,
       "<pre><code>$1</code></pre>"
     );
 
     /*
-      Bold text
+      Bold
     */
-
     safe = safe.replace(
       /\*\*(.*?)\*\*/g,
       "<strong>$1</strong>"
@@ -671,7 +849,6 @@
     /*
       Inline code
     */
-
     safe = safe.replace(
       /`([^`]+)`/g,
       "<code>$1</code>"
@@ -680,7 +857,6 @@
     /*
       New lines
     */
-
     safe = safe.replace(
       /\n/g,
       "<br>"
@@ -688,7 +864,6 @@
 
     return safe;
   }
-
 
   function escapeHTML(text) {
     const div =
@@ -701,7 +876,6 @@
 
     return div.innerHTML;
   }
-
 
   /* =========================================================
      TYPING
@@ -746,7 +920,6 @@
       messages.scrollHeight;
   }
 
-
   function hideTyping() {
     const typing =
       document.getElementById(
@@ -757,7 +930,6 @@
       typing.remove();
     }
   }
-
 
   /* =========================================================
      HISTORY
@@ -780,6 +952,10 @@
         );
 
       if (!response.ok) {
+        console.warn(
+          "History request failed:",
+          response.status
+        );
         return;
       }
 
@@ -878,6 +1054,9 @@
     }
   }
 
+  /* =========================================================
+     RESTORE HISTORY
+     ========================================================= */
 
   function restoreHistoryItem(
     item
@@ -891,7 +1070,8 @@
       return;
     }
 
-    messages.innerHTML = "";
+    messages.innerHTML =
+      "";
 
     const welcome =
       document.getElementById(
@@ -925,7 +1105,6 @@
       );
     }
   }
-
 
   /* =========================================================
      DELETE HISTORY
@@ -966,7 +1145,6 @@
       );
     }
   }
-
 
   /* =========================================================
      CLEAR ALL
@@ -1029,7 +1207,6 @@
     }
   }
 
-
   /* =========================================================
      NEW CHAT
      ========================================================= */
@@ -1069,14 +1246,14 @@
       );
 
     if (input) {
-      input.value = "";
+      input.value =
+        "";
 
       autoResize(input);
 
       input.focus();
     }
   }
-
 
   /* =========================================================
      IMAGE GENERATION
@@ -1089,7 +1266,6 @@
       showToast(
         "Image prompt likho"
       );
-
       return;
     }
 
@@ -1114,13 +1290,13 @@
       if (
         window.puter &&
         window.puter.ai &&
-        typeof window.puter.ai
-          .txt2img ===
+        typeof window.puter.ai.txt2img ===
           "function"
       ) {
         const result =
-          await window.puter.ai
-            .txt2img(prompt);
+          await window.puter.ai.txt2img(
+            prompt
+          );
 
         if (imageArea) {
           imageArea.innerHTML =
@@ -1136,7 +1312,8 @@
               typeof result ===
               "string"
             ) {
-              img.src = result;
+              img.src =
+                result;
             } else if (
               result.src
             ) {
@@ -1189,7 +1366,6 @@
     }
   }
 
-
   /* =========================================================
      WEBSITE GENERATOR
      ========================================================= */
@@ -1201,7 +1377,6 @@
       showToast(
         "Website idea likho"
       );
-
       return;
     }
 
@@ -1243,7 +1418,6 @@ Make it responsive and professional.
       if (websiteArea) {
         websiteArea.innerHTML = `
           <div class="website-result">
-
             <h3>
               🌐 Generated Website Code
             </h3>
@@ -1251,7 +1425,6 @@ Make it responsive and professional.
             <pre><code>${escapeHTML(
               result
             )}</code></pre>
-
           </div>
         `;
       }
@@ -1272,7 +1445,6 @@ Make it responsive and professional.
     }
   }
 
-
   /* =========================================================
      WEB SEARCH
      ========================================================= */
@@ -1284,7 +1456,6 @@ Make it responsive and professional.
       showToast(
         "Search query likho"
       );
-
       return;
     }
 
@@ -1319,7 +1490,7 @@ Make it responsive and professional.
 
       if (!response.ok) {
         throw new Error(
-          "Search failed"
+          `Search failed: ${response.status}`
         );
       }
 
@@ -1366,7 +1537,6 @@ Make it responsive and professional.
     }
   }
 
-
   /* =========================================================
      SPECIAL AREAS
      ========================================================= */
@@ -1393,7 +1563,6 @@ Make it responsive and professional.
     });
   }
 
-
   /* =========================================================
      INPUT
      ========================================================= */
@@ -1415,7 +1584,6 @@ Make it responsive and professional.
       ) + "px";
   }
 
-
   function handleKeyPress(
     event
   ) {
@@ -1424,11 +1592,9 @@ Make it responsive and professional.
       !event.shiftKey
     ) {
       event.preventDefault();
-
       sendMessage();
     }
   }
-
 
   /* =========================================================
      PDF / FILE ATTACHMENT
@@ -1440,16 +1606,6 @@ Make it responsive and professional.
         "fileInput"
       );
 
-    const selectedFileBox =
-      document.getElementById(
-        "selectedFile"
-      );
-
-    const selectedFileName =
-      document.getElementById(
-        "selectedFileName"
-      );
-
     const removeButton =
       document.getElementById(
         "removeSelectedFile"
@@ -1459,9 +1615,14 @@ Make it responsive and professional.
       return;
     }
 
-    /*
-      File picker
-    */
+    if (
+      fileInput.dataset.novexBound
+    ) {
+      return;
+    }
+
+    fileInput.dataset.novexBound =
+      "true";
 
     fileInput.addEventListener(
       "change",
@@ -1480,11 +1641,6 @@ Make it responsive and professional.
       }
     );
 
-
-    /*
-      Remove button
-    */
-
     if (removeButton) {
       removeButton.addEventListener(
         "click",
@@ -1497,7 +1653,6 @@ Make it responsive and professional.
       );
     }
   }
-
 
   function handleSelectedFile(
     file
@@ -1559,7 +1714,8 @@ Make it responsive and professional.
       return;
     }
 
-    selectedFile = file;
+    selectedFile =
+      file;
 
     const selectedFileBox =
       document.getElementById(
@@ -1588,9 +1744,9 @@ Make it responsive and professional.
     );
   }
 
-
   function clearSelectedFile() {
-    selectedFile = null;
+    selectedFile =
+      null;
 
     const fileInput =
       document.getElementById(
@@ -1608,7 +1764,8 @@ Make it responsive and professional.
       );
 
     if (fileInput) {
-      fileInput.value = "";
+      fileInput.value =
+        "";
     }
 
     if (selectedFileBox) {
@@ -1622,7 +1779,6 @@ Make it responsive and professional.
         "File";
     }
   }
-
 
   /* =========================================================
      VOICE
@@ -1653,53 +1809,51 @@ Make it responsive and professional.
     recognition.maxAlternatives =
       1;
 
-    recognition.onstart = () => {
-      showToast(
-        "🎤 Listening..."
-      );
-    };
+    recognition.onstart =
+      () => {
+        showToast(
+          "🎤 Listening..."
+        );
+      };
 
-    recognition.onresult = (
-      event
-    ) => {
-      const text =
-        event.results[0][0]
-          .transcript;
+    recognition.onresult =
+      (event) => {
+        const text =
+          event.results[0][0]
+            .transcript;
 
-      const input =
-        document.getElementById(
-          "messageInput"
-        ) ||
-        document.getElementById(
-          "userInput"
+        const input =
+          document.getElementById(
+            "messageInput"
+          ) ||
+          document.getElementById(
+            "userInput"
+          );
+
+        if (input) {
+          input.value +=
+            (input.value
+              ? " "
+              : "") + text;
+
+          autoResize(input);
+        }
+      };
+
+    recognition.onerror =
+      (event) => {
+        console.error(
+          "Voice error:",
+          event.error
         );
 
-      if (input) {
-        input.value +=
-          (input.value
-            ? " "
-            : "") + text;
-
-        autoResize(input);
-      }
-    };
-
-    recognition.onerror = (
-      event
-    ) => {
-      console.error(
-        "Voice error:",
-        event.error
-      );
-
-      showToast(
-        "Voice input failed"
-      );
-    };
+        showToast(
+          "Voice input failed"
+        );
+      };
 
     recognition.start();
   }
-
 
   /* =========================================================
      THEME
@@ -1717,7 +1871,6 @@ Make it responsive and professional.
       );
     }
   }
-
 
   function toggleTheme() {
     document.body.classList.toggle(
@@ -1737,7 +1890,6 @@ Make it responsive and professional.
     );
   }
 
-
   /* =========================================================
      SIDEBAR
      ========================================================= */
@@ -1752,14 +1904,6 @@ Make it responsive and professional.
       return;
     }
 
-    /*
-      Desktop:
-      collapsed sidebar
-
-      Mobile:
-      open sidebar
-    */
-
     if (
       window.innerWidth <= 800
     ) {
@@ -1773,9 +1917,8 @@ Make it responsive and professional.
     }
   }
 
-
   /* =========================================================
-     EVENTS
+     APP EVENTS
      ========================================================= */
 
   function setupAppEvents() {
@@ -1805,6 +1948,8 @@ Make it responsive and professional.
         "keydown",
         handleKeyPress
       );
+
+      autoResize(input);
     }
 
     const themeButton =
@@ -1825,7 +1970,6 @@ Make it responsive and professional.
       );
     }
   }
-
 
   /* =========================================================
      TOAST
@@ -1870,7 +2014,6 @@ Make it responsive and professional.
       }, 2500);
   }
 
-
   /* =========================================================
      LOGIN ERROR
      ========================================================= */
@@ -1894,7 +2037,6 @@ Make it responsive and professional.
     `;
   }
 
-
   /* =========================================================
      WINDOW RESIZE
      ========================================================= */
@@ -1917,7 +2059,6 @@ Make it responsive and professional.
       }
     }
   );
-
 
   /* =========================================================
      GLOBAL FUNCTIONS
@@ -1962,5 +2103,41 @@ Make it responsive and professional.
   window.clearSelectedFile =
     clearSelectedFile;
 
+  /*
+    Debug helpers — useful from browser console.
+  */
+  window.NOVEX_AUTH_TEST =
+    async function () {
+      const token =
+        await getAuthToken(true);
+
+      console.log(
+        "NOVEX AUTH TEST:",
+        {
+          clerkExists:
+            Boolean(window.Clerk),
+
+          signedIn:
+            Boolean(
+              window.Clerk?.isSignedIn
+            ),
+
+          sessionExists:
+            Boolean(
+              window.Clerk?.session
+            ),
+
+          tokenExists:
+            Boolean(token),
+
+          tokenLength:
+            token
+              ? token.length
+              : 0
+        }
+      );
+
+      return Boolean(token);
+    };
+
 })();
-````
