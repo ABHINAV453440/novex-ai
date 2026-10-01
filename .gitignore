@@ -1,13 +1,39 @@
+# ============ PYTHON ============
 __pycache__/
-*.pyc
-_convex_backup/
+*.py[cod]
+*$py.class
 venv/
+.venv/
+env/
+ENV/
+
+# ============ NODE (NEVER PUSH) ============
+node_modules/
+package-lock.json
+package.json
+convex/node_modules/
+convex/package-lock.json
+
+# ============ SECRETS ============
 .env
 .env.local
+.env.*.local
+
+# ============ NOVEX DATA ============
 uploads/
 voice/
+*.mp3
 novex_edu_store.json
-node_modules/
-.convex/
-*.log
+novex_code_*.py
+notes.txt
+
+# ============ IDE ============
+.vscode/
+.idea/
+*.swp
 .DS_Store
+Thumbs.db
+
+# ============ LOGS ============
+*.log
+logs/

@@ -1,0 +1,300 @@
+/* ============================================================
+   NOVEX AI — UI Layout Modes v1.0
+   Body classes: ui-classic, ui-compact, ui-zen, ui-focus, ui-dual
+   ============================================================ */
+
+/* ============ MODE 1: CLASSIC (default) ============ */
+/* Already default — no overrides needed */
+
+/* ============ MODE 2: COMPACT ============ */
+body.ui-compact .app{grid-template-columns:220px 1fr}
+body.ui-compact .sidebar{padding:.5rem .4rem}
+body.ui-compact .brand{padding:.3rem .3rem .6rem;margin-bottom:.3rem}
+body.ui-compact .brand-mark{width:26px;height:26px;font-size:.85rem;border-radius:8px}
+body.ui-compact .brand-name{font-size:.85rem}
+body.ui-compact .brand-tag{display:none}
+body.ui-compact .new-chat{padding:.5rem .65rem;font-size:.78rem;margin-bottom:.4rem}
+body.ui-compact .new-chat svg{width:13px;height:13px}
+body.ui-compact .nav-item{padding:.4rem .55rem;font-size:.78rem;gap:.5rem}
+body.ui-compact .nav-item svg{width:14px;height:14px}
+body.ui-compact .chat-item{padding:.4rem .55rem;font-size:.78rem}
+body.ui-compact .section-label{padding:.5rem .5rem .2rem;font-size:.58rem}
+body.ui-compact .user-card{padding:.5rem .45rem}
+body.ui-compact .user-avatar{width:26px;height:26px;font-size:.7rem}
+body.ui-compact .user-name{font-size:.78rem}
+body.ui-compact .user-plan{font-size:.65rem}
+body.ui-compact .chat-inner{max-width:100%;padding:0 1rem}
+body.ui-compact .msg-row{padding:.7rem 0}
+body.ui-compact .msg-content{font-size:.9rem;line-height:1.65}
+body.ui-compact .msg-content h1{font-size:1.15rem}
+body.ui-compact .msg-content h2{font-size:1rem}
+body.ui-compact .msg-content h3{font-size:.92rem}
+body.ui-compact .composer{padding:.6rem 1rem 1rem}
+body.ui-compact .composer-box{border-radius:20px;padding:.4rem .4rem .4rem .7rem}
+body.ui-compact .composer-box textarea{font-size:.88rem;max-height:120px;padding:.4rem 0}
+body.ui-compact .icon-btn{width:32px;height:32px;font-size:1rem}
+body.ui-compact .icon-btn svg{width:15px;height:15px}
+body.ui-compact .send-btn{width:34px;height:34px}
+body.ui-compact .empty-logo{width:52px;height:52px;font-size:1.4rem;margin-bottom:1rem}
+body.ui-compact .empty h1{font-size:1.5rem}
+body.ui-compact .empty p{font-size:.85rem;margin-bottom:1.5rem}
+body.ui-compact .suggestions{grid-template-columns:repeat(3,1fr);gap:.5rem;max-width:900px}
+body.ui-compact .suggestion{padding:.7rem .8rem;border-radius:11px;gap:.55rem}
+body.ui-compact .suggestion-icon{width:26px;height:26px;font-size:.8rem}
+body.ui-compact .suggestion-title{font-size:.8rem}
+body.ui-compact .suggestion-desc{font-size:.68rem}
+body.ui-compact .topbar{padding:.5rem .9rem}
+body.ui-compact .topbar-title{font-size:.85rem;padding:.3rem .55rem}
+
+/* ============ MODE 3: ZEN (minimal, calm) ============ */
+body.ui-zen .sidebar{display:none !important}
+body.ui-zen .app{grid-template-columns:1fr}
+body.ui-zen .topbar{
+  background:transparent;
+  border-bottom:none;
+  padding:1rem 1.5rem;
+}
+body.ui-zen .topbar-right > *:not(.gami-chip):not(.icon-btn-top):not(.menu-anchor){
+  opacity:.35;
+  transition:opacity .3s;
+}
+body.ui-zen .topbar:hover .topbar-right > *{opacity:1}
+body.ui-zen .chat-inner{max-width:720px}
+body.ui-zen .msg-row{padding:2rem 0}
+body.ui-zen .msg-content{font-size:1.02rem;line-height:1.85}
+body.ui-zen .composer{padding:1.5rem 2rem 2.5rem}
+body.ui-zen .composer-box{
+  border-radius:28px;
+  padding:.7rem .7rem .7rem 1.1rem;
+  box-shadow:0 20px 60px rgba(0,0,0,.4);
+  background:var(--sur2);
+  border-color:var(--bor);
+}
+body.ui-zen .empty{min-height:calc(100vh - 300px)}
+body.ui-zen .empty h1{font-size:2.4rem}
+body.ui-zen .empty p{font-size:1.02rem}
+body.ui-zen .empty-logo{
+  width:88px;height:88px;font-size:2.5rem;
+  animation:zenFloat 8s ease-in-out infinite;
+}
+@keyframes zenFloat{
+  0%,100%{transform:translateY(0) rotate(-2deg)}
+  50%{transform:translateY(-8px) rotate(2deg)}
+}
+body.ui-zen .shortcuts-hint{display:none}
+body.ui-zen .suggestions{grid-template-columns:repeat(2,1fr)}
+body.ui-zen .section-label,
+body.ui-zen .chat-scroll{display:none}
+
+/* ============ MODE 4: FOCUS (only chat) ============ */
+body.ui-focus .sidebar{display:none !important}
+body.ui-focus .app{grid-template-columns:1fr}
+body.ui-focus .topbar{padding:.6rem 1rem}
+body.ui-focus .topbar-title{max-width:300px}
+body.ui-focus .topbar-right > *:not(#gamiChip):not(.gami-chip):not(.icon-btn-top){display:none}
+body.ui-focus .chat-inner{max-width:800px}
+body.ui-focus .msg-row{padding:1.4rem 0}
+body.ui-focus .composer{padding:1rem 2rem 2rem}
+body.ui-focus .empty .suggestions{grid-template-columns:repeat(3,1fr)}
+body.ui-focus .shortcuts-hint{display:none}
+body.ui-focus::before{
+  content:'🎯 FOCUS MODE';
+  position:fixed;
+  bottom:8px;left:50%;
+  transform:translateX(-50%);
+  font-size:.65rem;
+  color:var(--mut);
+  letter-spacing:.2em;
+  font-weight:700;
+  opacity:.5;
+  z-index:1;
+  pointer-events:none;
+}
+
+/* ============ MODE 5: DUAL PANEL ============ */
+body.ui-dual .main{
+  display:grid !important;
+  grid-template-columns:1fr 360px;
+  grid-template-rows:auto 1fr auto;
+}
+body.ui-dual .topbar{grid-column:1/-1}
+body.ui-dual .chat-scroll-main{grid-column:1}
+body.ui-dual .composer{grid-column:1}
+body.ui-dual .chat-inner{max-width:100%;padding:0 1.5rem 0 1rem;margin:0}
+body.ui-dual .dual-panel{
+  grid-column:2;
+  grid-row:2/4;
+  border-left:1px solid var(--bor);
+  background:var(--sur);
+  padding:1.2rem;
+  overflow-y:auto;
+  display:flex;
+  flex-direction:column;
+  gap:.85rem;
+  animation:dualSlideIn .3s ease;
+}
+@keyframes dualSlideIn{
+  from{transform:translateX(40px);opacity:0}
+  to{transform:translateX(0);opacity:1}
+}
+body.ui-dual .dual-panel-head{
+  font-size:.7rem;
+  color:var(--mut);
+  font-weight:800;
+  text-transform:uppercase;
+  letter-spacing:.12em;
+  padding-bottom:.6rem;
+  border-bottom:1px solid var(--bor);
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+}
+body.ui-dual .dual-card{
+  padding:.85rem 1rem;
+  background:var(--sur2);
+  border:1px solid var(--bor);
+  border-radius:12px;
+  transition:all .2s;
+}
+body.ui-dual .dual-card:hover{border-color:var(--cy);transform:translateY(-2px)}
+body.ui-dual .dual-card h4{
+  font-size:.82rem;
+  font-weight:700;
+  margin-bottom:.3rem;
+  color:var(--txt);
+}
+body.ui-dual .dual-card p{
+  font-size:.72rem;
+  color:var(--dim);
+  line-height:1.5;
+  margin-bottom:.5rem;
+}
+body.ui-dual .dual-card .btn{
+  padding:.4rem .8rem;
+  background:var(--cy);
+  color:#fff;
+  border:none;
+  border-radius:6px;
+  font-size:.7rem;
+  font-weight:700;
+  cursor:pointer;
+  font-family:inherit;
+  transition:all .15s;
+}
+body.ui-dual .dual-card .btn:hover{filter:brightness(1.15);transform:translateY(-1px)}
+@media(max-width:1100px){
+  body.ui-dual .main{grid-template-columns:1fr}
+  body.ui-dual .dual-panel{display:none}
+}
+
+/* ============ UI MODE PICKER UI ============ */
+.ui-mode-picker{
+  position:fixed;
+  top:70px;
+  right:14px;
+  z-index:1500;
+  background:var(--sur2);
+  border:1px solid var(--bor2);
+  border-radius:14px;
+  padding:.5rem;
+  box-shadow:var(--sh-lg);
+  display:none;
+  flex-direction:column;
+  gap:2px;
+  min-width:240px;
+  max-height:70vh;
+  overflow-y:auto;
+  animation:uiModeFade .2s ease;
+}
+@keyframes uiModeFade{
+  from{opacity:0;transform:translateY(-8px)}
+  to{opacity:1;transform:translateY(0)}
+}
+.ui-mode-picker.open{display:flex}
+.ui-mode-picker-label{
+  font-size:.65rem;
+  color:var(--mut);
+  font-weight:800;
+  text-transform:uppercase;
+  letter-spacing:.1em;
+  padding:.4rem .6rem .3rem;
+}
+.ui-mode-btn{
+  display:flex;
+  align-items:center;
+  gap:.7rem;
+  padding:.65rem .75rem;
+  background:transparent;
+  border:none;
+  color:var(--txt);
+  font-size:.82rem;
+  cursor:pointer;
+  border-radius:9px;
+  text-align:left;
+  font-family:inherit;
+  width:100%;
+  transition:all .15s;
+}
+.ui-mode-btn:hover{background:var(--hov2)}
+.ui-mode-btn.active{
+  background:var(--gl2);
+  color:var(--cy);
+  box-shadow:inset 0 0 0 1px var(--cy);
+}
+.ui-mode-btn .uic-icon{
+  font-size:1.15rem;
+  width:26px;
+  text-align:center;
+  flex-shrink:0;
+}
+.ui-mode-btn .uic-body{flex:1;min-width:0}
+.ui-mode-btn .uic-name{
+  font-size:.85rem;
+  font-weight:600;
+  line-height:1.2;
+}
+.ui-mode-btn .uic-desc{
+  font-size:.68rem;
+  color:var(--dim);
+  margin-top:2px;
+  line-height:1.3;
+}
+.ui-mode-btn.active .uic-desc{color:var(--cy);opacity:.85}
+.ui-mode-btn .uic-check{
+  color:var(--cy);
+  font-size:.9rem;
+  opacity:0;
+}
+.ui-mode-btn.active .uic-check{opacity:1}
+
+/* ============ TOPBAR INDICATOR ============ */
+.ui-mode-indicator{
+  display:none;
+  font-size:.62rem;
+  font-weight:800;
+  letter-spacing:.1em;
+  text-transform:uppercase;
+  padding:.2rem .55rem;
+  border-radius:6px;
+  background:var(--gl2);
+  color:var(--cy);
+  margin-left:.4rem;
+}
+body.ui-compact .ui-mode-indicator,
+body.ui-zen .ui-mode-indicator,
+body.ui-focus .ui-mode-indicator,
+body.ui-dual .ui-mode-indicator{display:inline-block}
+
+body.ui-compact .ui-mode-indicator::after{content:'COMPACT'}
+body.ui-zen .ui-mode-indicator::after{content:'ZEN'}
+body.ui-focus .ui-mode-indicator::after{content:'FOCUS'}
+body.ui-dual .ui-mode-indicator::after{content:'DUAL'}
+
+/* ============ MOBILE RESPONSIVE ============ */
+@media(max-width:900px){
+  body.ui-zen .chat-inner{max-width:100%;padding:0 1rem}
+  body.ui-zen .msg-row{padding:1.2rem 0}
+  body.ui-zen .composer{padding:1rem}
+  body.ui-zen .empty h1{font-size:1.8rem}
+  body.ui-focus .chat-inner{max-width:100%}
+}

@@ -1,0 +1,359 @@
+/* ============================================================
+   NOVEX AI — EXTRA CRAZY THEMES (20)
+   Add <link rel="stylesheet" href="/themes-extra.css"> after themes.css
+   ============================================================ */
+
+/* ========== CRAZY 1: VAPORWAVE ========== */
+[data-theme="vaporwave"]{
+  --bg-0:#2a0845;--bg-1:#2a0845;--bg-2:#1a0530;--sur:#3d0f5e;
+  --sur2:#4f1a72;--sur3:#662a88;--hov:rgba(255,113,206,.12);--hov2:rgba(255,113,206,.22);
+  --bor:rgba(255,113,206,.3);--bor2:rgba(1,205,254,.5);
+  --txt:#ffe5ff;--txt2:#ffb8ff;--dim:#c77dd4;--mut:#8048a8;
+  --cy:#ff71ce;--cy2:#01cdfe;--blu:#05ffa1;--grn:#b967ff;
+  --red:#ff3864;--amb:#fffb96;--gl1:rgba(255,113,206,.7);--gl2:rgba(1,205,254,.5);
+}
+[data-theme="vaporwave"] body{
+  background:#2a0845;
+  background-image:
+    radial-gradient(circle at 20% 20%,rgba(255,113,206,.3) 0%,transparent 40%),
+    radial-gradient(circle at 80% 80%,rgba(1,205,254,.3) 0%,transparent 40%),
+    repeating-linear-gradient(0deg,rgba(255,113,206,.05) 0,rgba(255,113,206,.05) 1px,transparent 1px,transparent 3px);
+}
+
+/* ========== CRAZY 2: MATRIX GREEN ========== */
+[data-theme="matrix"]{
+  --bg-0:#000;--bg-1:#000;--bg-2:#000800;--sur:#0a1408;
+  --sur2:#0f1f0a;--sur3:#142d10;--hov:rgba(0,255,65,.08);--hov2:rgba(0,255,65,.18);
+  --bor:rgba(0,255,65,.25);--bor2:rgba(0,255,65,.45);
+  --txt:#c8ffc8;--txt2:#7ddc7d;--dim:#4a9c4a;--mut:#2a5c2a;
+  --cy:#00ff41;--cy2:#7dff7d;--blu:#00cc33;--grn:#00ff41;
+  --red:#ff4040;--amb:#ccff00;--gl1:rgba(0,255,65,.7);--gl2:rgba(0,255,65,.4);
+}
+[data-theme="matrix"] body{
+  background:#000;
+  background-image:
+    repeating-linear-gradient(90deg,transparent 0,transparent 2px,rgba(0,255,65,.03) 2px,rgba(0,255,65,.03) 3px),
+    radial-gradient(ellipse at 50% 50%,rgba(0,255,65,.08) 0%,transparent 70%);
+  font-family:'Courier New',monospace;
+}
+[data-theme="matrix"] .msg-content{text-shadow:0 0 4px rgba(0,255,65,.5)}
+
+/* ========== CRAZY 3: CANDY POP ========== */
+[data-theme="candypop"]{
+  --bg-0:#fff5fb;--bg-1:#fff5fb;--bg-2:#ffe8f5;--sur:#ffffff;
+  --sur2:#fff0f8;--sur3:#ffd9ee;--hov:rgba(255,105,180,.08);--hov2:rgba(255,105,180,.16);
+  --bor:rgba(255,105,180,.25);--bor2:rgba(255,105,180,.45);
+  --txt:#4a1e35;--txt2:#8b3a62;--dim:#c76a99;--mut:#e0a3c0;
+  --cy:#ff69b4;--cy2:#ff9dc9;--blu:#87ceeb;--grn:#7bed9f;
+  --red:#ff6b6b;--amb:#ffd93d;--gl1:rgba(255,105,180,.4);--gl2:rgba(135,206,235,.3);
+}
+[data-theme="candypop"] body{
+  background:#fff5fb;
+  background-image:
+    radial-gradient(circle at 10% 20%,rgba(255,105,180,.15) 0%,transparent 30%),
+    radial-gradient(circle at 90% 80%,rgba(135,206,235,.15) 0%,transparent 30%),
+    radial-gradient(circle at 50% 50%,rgba(255,217,61,.1) 0%,transparent 40%);
+}
+
+/* ========== CRAZY 4: COSMIC PURPLE ========== */
+[data-theme="cosmic"]{
+  --bg-0:#0f0524;--bg-1:#0f0524;--bg-2:#080218;--sur:#1a0e3a;
+  --sur2:#251550;--sur3:#332268;--hov:rgba(180,120,255,.1);--hov2:rgba(180,120,255,.2);
+  --bor:rgba(180,120,255,.3);--bor2:rgba(255,120,220,.5);
+  --txt:#e8d8ff;--txt2:#b89cff;--dim:#7a5cd9;--mut:#503fa0;
+  --cy:#b478ff;--cy2:#ff78dc;--blu:#78aaff;--grn:#78ffa0;
+  --red:#ff5a8a;--amb:#ffcc4d;--gl1:rgba(180,120,255,.6);--gl2:rgba(255,120,220,.4);
+}
+[data-theme="cosmic"] body{
+  background:#0f0524;
+  background-image:
+    radial-gradient(1px 1px at 15% 25%,#fff 0%,transparent),
+    radial-gradient(1px 1px at 65% 75%,#fff 0%,transparent),
+    radial-gradient(1px 1px at 85% 15%,#fff 0%,transparent),
+    radial-gradient(2px 2px at 35% 45%,#fff 0%,transparent),
+    radial-gradient(2px 2px at 75% 60%,#fff 0%,transparent),
+    radial-gradient(ellipse at 50% 50%,rgba(180,120,255,.15) 0%,transparent 60%);
+  background-size:200px 200px,250px 250px,300px 300px,400px 400px,500px 500px,auto;
+}
+
+/* ========== CRAZY 5: RETRO TERMINAL ========== */
+[data-theme="terminal"]{
+  --bg-0:#0a0e0a;--bg-1:#0a0e0a;--bg-2:#050805;--sur:#0f140f;
+  --sur2:#151c15;--sur3:#1f2a1f;--hov:rgba(51,255,51,.08);--hov2:rgba(51,255,51,.16);
+  --bor:rgba(51,255,51,.3);--bor2:rgba(51,255,51,.55);
+  --txt:#33ff33;--txt2:#25cc25;--dim:#1a991a;--mut:#0d660d;
+  --cy:#33ff33;--cy2:#88ff88;--blu:#33ffcc;--grn:#33ff33;
+  --red:#ff3333;--amb:#ffcc33;--gl1:rgba(51,255,51,.7);--gl2:rgba(51,255,51,.4);
+}
+[data-theme="terminal"] body{
+  background:#0a0e0a;
+  font-family:'Courier New',monospace;
+  text-shadow:0 0 2px rgba(51,255,51,.6);
+}
+[data-theme="terminal"] .brand-name::after{content:'_';animation:blink 1s infinite}
+@keyframes blink{50%{opacity:0}}
+
+/* ========== CRAZY 6: SUNSET GRADIENT ========== */
+[data-theme="sunsetgrad"]{
+  --bg-0:#1a0a1e;--bg-1:#1a0a1e;--bg-2:#100516;--sur:#2a1030;
+  --sur2:#3a1840;--sur3:#4a2050;--hov:rgba(255,120,80,.12);--hov2:rgba(255,120,80,.22);
+  --bor:rgba(255,120,80,.25);--bor2:rgba(255,80,140,.5);
+  --txt:#fff0e0;--txt2:#ffc8a0;--dim:#d08060;--mut:#905060;
+  --cy:#ff7860;--cy2:#ff5080;--blu:#ff60a0;--grn:#a0ff70;
+  --red:#ff4040;--amb:#ffb040;--gl1:rgba(255,120,96,.6);--gl2:rgba(255,80,128,.4);
+}
+[data-theme="sunsetgrad"] body{
+  background:linear-gradient(135deg,#1a0a1e 0%,#3a1840 30%,#5a2050 60%,#1a0a1e 100%);
+  background-attachment:fixed;
+}
+
+/* ========== CRAZY 7: OCEAN GRADIENT ========== */
+[data-theme="oceangrad"]{
+  --bg-0:#021a2a;--bg-1:#021a2a;--bg-2:#01121f;--sur:#04304a;
+  --sur2:#064060;--sur3:#085080;--hov:rgba(96,220,255,.1);--hov2:rgba(96,220,255,.2);
+  --bor:rgba(96,220,255,.25);--bor2:rgba(96,220,255,.5);
+  --txt:#d0f0ff;--txt2:#88d0f0;--dim:#4a90b0;--mut:#2a6080;
+  --cy:#60dcff;--cy2:#88e8ff;--blu:#40a0d0;--grn:#40ffb0;
+  --red:#ff6080;--amb:#ffd060;--gl1:rgba(96,220,255,.6);--gl2:rgba(64,160,208,.4);
+}
+[data-theme="oceangrad"] body{
+  background:linear-gradient(180deg,#021a2a 0%,#064060 50%,#021a2a 100%);
+  background-attachment:fixed;
+}
+
+/* ========== CRAZY 8: FIRE ========== */
+[data-theme="fire"]{
+  --bg-0:#1a0505;--bg-1:#1a0505;--bg-2:#100303;--sur:#2a0808;
+  --sur2:#3a0d0d;--sur3:#4a1515;--hov:rgba(255,120,0,.12);--hov2:rgba(255,120,0,.22);
+  --bor:rgba(255,120,0,.3);--bor2:rgba(255,200,0,.5);
+  --txt:#ffe8d0;--txt2:#ffb060;--dim:#d06030;--mut:#803810;
+  --cy:#ff7800;--cy2:#ffcc00;--blu:#ff3060;--grn:#80ff40;
+  --red:#ff2020;--amb:#ffcc00;--gl1:rgba(255,120,0,.7);--gl2:rgba(255,200,0,.5);
+}
+[data-theme="fire"] body{
+  background:#1a0505;
+  background-image:
+    radial-gradient(ellipse at 50% 100%,rgba(255,120,0,.35) 0%,transparent 50%),
+    radial-gradient(ellipse at 20% 80%,rgba(255,60,0,.25) 0%,transparent 40%),
+    radial-gradient(ellipse at 80% 70%,rgba(255,200,0,.2) 0%,transparent 40%);
+}
+
+/* ========== CRAZY 9: ICE ========== */
+[data-theme="ice"]{
+  --bg-0:#e8f4ff;--bg-1:#e8f4ff;--bg-2:#d4e8ff;--sur:#ffffff;
+  --sur2:#f0f8ff;--sur3:#e0f0ff;--hov:rgba(100,180,255,.08);--hov2:rgba(100,180,255,.16);
+  --bor:rgba(100,180,255,.3);--bor2:rgba(100,180,255,.5);
+  --txt:#0a2540;--txt2:#3a5070;--dim:#7090b0;--mut:#b0c8e0;
+  --cy:#40a0f0;--cy2:#88c8ff;--blu:#2060c0;--grn:#40d0a0;
+  --red:#ff5060;--amb:#ffb040;--gl1:rgba(64,160,240,.4);--gl2:rgba(136,200,255,.3);
+}
+[data-theme="ice"] body{
+  background:#e8f4ff;
+  background-image:
+    radial-gradient(circle at 20% 20%,rgba(136,200,255,.3) 0%,transparent 40%),
+    radial-gradient(circle at 80% 80%,rgba(200,230,255,.4) 0%,transparent 40%);
+}
+
+/* ========== CRAZY 10: NEON RAINBOW ========== */
+[data-theme="rainbow"]{
+  --bg-0:#0a0a0a;--bg-1:#0a0a0a;--bg-2:#050505;--sur:#111;
+  --sur2:#181818;--sur3:#222;--hov:rgba(255,255,255,.08);--hov2:rgba(255,255,255,.15);
+  --bor:rgba(255,0,128,.4);--bor2:rgba(0,255,255,.6);
+  --txt:#fff;--txt2:#d0d0d0;--dim:#909090;--mut:#606060;
+  --cy:#ff0080;--cy2:#00ffff;--blu:#8000ff;--grn:#00ff80;
+  --red:#ff0040;--amb:#ffff00;--gl1:rgba(255,0,128,.7);--gl2:rgba(0,255,255,.6);
+}
+[data-theme="rainbow"] body{
+  background:#0a0a0a;
+  background-image:
+    radial-gradient(circle at 15% 20%,rgba(255,0,128,.35) 0%,transparent 30%),
+    radial-gradient(circle at 85% 25%,rgba(0,255,255,.35) 0%,transparent 30%),
+    radial-gradient(circle at 25% 80%,rgba(128,0,255,.35) 0%,transparent 30%),
+    radial-gradient(circle at 75% 75%,rgba(255,255,0,.3) 0%,transparent 30%),
+    radial-gradient(circle at 50% 50%,rgba(0,255,128,.25) 0%,transparent 40%);
+}
+[data-theme="rainbow"] .brand-name{
+  background:linear-gradient(90deg,#ff0080,#00ffff,#8000ff,#00ff80,#ffff00,#ff0080);
+  background-size:300% 100%;
+  -webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;
+  animation:rainbowShift 3s linear infinite;
+}
+@keyframes rainbowShift{0%{background-position:0% 50%}100%{background-position:300% 50%}}
+
+/* ========== CRAZY 11: DOODLE / NOTEBOOK ========== */
+[data-theme="doodle"]{
+  --bg-0:#fefdf7;--bg-1:#fefdf7;--bg-2:#f5f2e8;--sur:#fffef9;
+  --sur2:#f8f5e8;--sur3:#ebe6d0;--hov:rgba(80,60,20,.05);--hov2:rgba(80,60,20,.1);
+  --bor:rgba(80,60,20,.15);--bor2:rgba(80,60,20,.3);
+  --txt:#2a2010;--txt2:#5a4830;--dim:#8a7050;--mut:#b0a088;
+  --cy:#4080c0;--cy2:#60a0d0;--blu:#3060b0;--grn:#60a040;
+  --red:#d04040;--amb:#d0a030;--gl1:rgba(64,128,192,.3);--gl2:rgba(96,160,208,.2);
+}
+[data-theme="doodle"] body{
+  background:#fefdf7;
+  background-image:
+    repeating-linear-gradient(0deg,transparent 0,transparent 27px,rgba(80,60,20,.08) 27px,rgba(80,60,20,.08) 28px),
+    linear-gradient(90deg,transparent 0,transparent 58px,rgba(220,80,80,.15) 58px,rgba(220,80,80,.15) 60px,transparent 60px);
+  font-family:'Comic Sans MS','Georgia',cursive;
+}
+
+/* ========== CRAZY 12: CHALKBOARD ========== */
+[data-theme="chalkboard"]{
+  --bg-0:#1a2a1a;--bg-1:#1a2a1a;--bg-2:#0f1a0f;--sur:#243a24;
+  --sur2:#2e4a2e;--sur3:#3a5a3a;--hov:rgba(240,240,220,.08);--hov2:rgba(240,240,220,.15);
+  --bor:rgba(240,240,220,.2);--bor2:rgba(240,240,220,.4);
+  --txt:#f0f0dc;--txt2:#d0d0b0;--dim:#90a090;--mut:#5a6a5a;
+  --cy:#f0f0dc;--cy2:#ffffc0;--blu:#a0d0ff;--grn:#a0e0a0;
+  --red:#ffa0a0;--amb:#ffd890;--gl1:rgba(240,240,220,.5);--gl2:rgba(200,200,180,.3);
+}
+[data-theme="chalkboard"] body{
+  background:#1a2a1a;
+  background-image:
+    radial-gradient(circle at 20% 20%,rgba(240,240,220,.03) 0%,transparent 40%),
+    radial-gradient(circle at 80% 80%,rgba(240,240,220,.02) 0%,transparent 40%);
+  font-family:'Comic Sans MS','Georgia',cursive;
+}
+[data-theme="chalkboard"] .msg-content{font-size:1rem;line-height:1.85}
+
+/* ========== CRAZY 13: NEWSPAPER ========== */
+[data-theme="newspaper"]{
+  --bg-0:#f5f0e3;--bg-1:#f5f0e3;--bg-2:#ebe5d4;--sur:#faf5e8;
+  --sur2:#f0ead8;--sur3:#e0d8c0;--hov:rgba(30,20,10,.06);--hov2:rgba(30,20,10,.12);
+  --bor:rgba(30,20,10,.25);--bor2:rgba(30,20,10,.5);
+  --txt:#1a1208;--txt2:#3a2a18;--dim:#6a5840;--mut:#9a8870;
+  --cy:#1a1208;--cy2:#4a3018;--blu:#303030;--grn:#405030;
+  --red:#8b0000;--amb:#8b5a00;--gl1:rgba(26,18,8,.4);--gl2:rgba(74,48,24,.2);
+}
+[data-theme="newspaper"] body{
+  background:#f5f0e3;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='100' height='100'%3E%3Cfilter id='n'%3E%3CfeTurbulence baseFrequency='0.8'/%3E%3C/filter%3E%3Crect width='100' height='100' filter='url(%23n)' opacity='0.04'/%3E%3C/svg%3E");
+  font-family:'Georgia','Times New Roman',serif;
+}
+[data-theme="newspaper"] .brand-name{font-family:'Playfair Display','Georgia',serif;letter-spacing:.02em}
+
+/* ========== CRAZY 14: GAMEBOY ========== */
+[data-theme="gameboy"]{
+  --bg-0:#9bbc0f;--bg-1:#9bbc0f;--bg-2:#8bac0f;--sur:#a8c828;
+  --sur2:#b8d048;--sur3:#c8d868;--hov:rgba(15,56,15,.1);--hov2:rgba(15,56,15,.2);
+  --bor:rgba(15,56,15,.35);--bor2:rgba(15,56,15,.6);
+  --txt:#0f380f;--txt2:#1f481f;--dim:#306230;--mut:#508050;
+  --cy:#0f380f;--cy2:#306230;--blu:#205020;--grn:#0f380f;
+  --red:#8b0000;--amb:#5a4000;--gl1:rgba(15,56,15,.5);--gl2:rgba(48,98,48,.3);
+}
+[data-theme="gameboy"] body{
+  background:#9bbc0f;
+  font-family:'Courier New',monospace;
+  image-rendering:pixelated;
+}
+[data-theme="gameboy"] .brand-mark{filter:drop-shadow(2px 2px 0 rgba(15,56,15,.5))}
+
+/* ========== CRAZY 15: SEPIA ========== */
+[data-theme="sepia"]{
+  --bg-0:#efe0c8;--bg-1:#efe0c8;--bg-2:#e0d0b0;--sur:#f5ead5;
+  --sur2:#ebe0c8;--sur3:#d8c8a8;--hov:rgba(90,60,30,.06);--hov2:rgba(90,60,30,.12);
+  --bor:rgba(90,60,30,.25);--bor2:rgba(90,60,30,.45);
+  --txt:#3a2810;--txt2:#5a4020;--dim:#8a7050;--mut:#b09878;
+  --cy:#8b5a2b;--cy2:#a07040;--blu:#605a40;--grn:#607040;
+  --red:#a03020;--amb:#906020;--gl1:rgba(139,90,43,.4);--gl2:rgba(160,112,64,.25);
+}
+[data-theme="sepia"] body{
+  background:#efe0c8;
+  background-image:radial-gradient(ellipse at center,rgba(139,90,43,.08) 0%,transparent 70%);
+  font-family:'Georgia',serif;
+}
+
+/* ========== CRAZY 16: NEON PINK ========== */
+[data-theme="neonpink"]{
+  --bg-0:#1a0010;--bg-1:#1a0010;--bg-2:#100008;--sur:#2a001a;
+  --sur2:#3a0028;--sur3:#4a0038;--hov:rgba(255,50,180,.15);--hov2:rgba(255,50,180,.25);
+  --bor:rgba(255,50,180,.4);--bor2:rgba(255,100,200,.6);
+  --txt:#ffe0f5;--txt2:#ffa0e0;--dim:#d060a0;--mut:#803060;
+  --cy:#ff32b4;--cy2:#ff64c8;--blu:#ff88ff;--grn:#88ffcc;
+  --red:#ff0033;--amb:#ffcc00;--gl1:rgba(255,50,180,.8);--gl2:rgba(255,100,200,.6);
+}
+[data-theme="neonpink"] body{
+  background:#1a0010;
+  background-image:
+    radial-gradient(ellipse at 50% 0%,rgba(255,50,180,.3) 0%,transparent 60%),
+    radial-gradient(ellipse at 50% 100%,rgba(255,100,200,.2) 0%,transparent 60%);
+}
+[data-theme="neonpink"] .brand-mark{animation:pulsePink 2s ease-in-out infinite}
+@keyframes pulsePink{0%,100%{box-shadow:0 0 20px rgba(255,50,180,.6)}50%{box-shadow:0 0 40px rgba(255,50,180,.9)}}
+
+/* ========== CRAZY 17: AQUA ========== */
+[data-theme="aqua"]{
+  --bg-0:#001a1f;--bg-1:#001a1f;--bg-2:#001214;--sur:#003038;
+  --sur2:#004048;--sur3:#005058;--hov:rgba(0,255,255,.1);--hov2:rgba(0,255,255,.2);
+  --bor:rgba(0,255,255,.3);--bor2:rgba(0,255,255,.5);
+  --txt:#c0ffff;--txt2:#80e8e8;--dim:#40b0b0;--mut:#206070;
+  --cy:#00ffff;--cy2:#80ffff;--blu:#40d0d0;--grn:#40ffd0;
+  --red:#ff6080;--amb:#ffe060;--gl1:rgba(0,255,255,.7);--gl2:rgba(128,255,255,.5);
+}
+[data-theme="aqua"] body{
+  background:#001a1f;
+  background-image:
+    radial-gradient(circle at 30% 30%,rgba(0,255,255,.15) 0%,transparent 40%),
+    radial-gradient(circle at 70% 70%,rgba(64,208,208,.15) 0%,transparent 40%);
+}
+
+/* ========== CRAZY 18: BLOOD MOON ========== */
+[data-theme="bloodmoon"]{
+  --bg-0:#0a0000;--bg-1:#0a0000;--bg-2:#050000;--sur:#1a0505;
+  --sur2:#2a0808;--sur3:#3a0d0d;--hov:rgba(200,30,30,.1);--hov2:rgba(200,30,30,.2);
+  --bor:rgba(200,30,30,.3);--bor2:rgba(255,60,60,.5);
+  --txt:#ffe0e0;--txt2:#ffb0b0;--dim:#c06060;--mut:#703030;
+  --cy:#c81e1e;--cy2:#ff3c3c;--blu:#a03060;--grn:#70a040;
+  --red:#ff2020;--amb:#ffa020;--gl1:rgba(200,30,30,.7);--gl2:rgba(255,60,60,.5);
+}
+[data-theme="bloodmoon"] body{
+  background:#0a0000;
+  background-image:
+    radial-gradient(circle at 50% 30%,rgba(200,30,30,.35) 0%,transparent 50%),
+    radial-gradient(circle at 20% 80%,rgba(160,48,96,.2) 0%,transparent 40%),
+    radial-gradient(circle at 80% 70%,rgba(255,60,60,.15) 0%,transparent 40%);
+}
+
+/* ========== CRAZY 19: SAKURA ========== */
+[data-theme="sakura"]{
+  --bg-0:#fff0f5;--bg-1:#fff0f5;--bg-2:#ffe0ec;--sur:#fffbfd;
+  --sur2:#fff5f8;--sur3:#ffe0ea;--hov:rgba(255,150,180,.1);--hov2:rgba(255,150,180,.2);
+  --bor:rgba(255,150,180,.3);--bor2:rgba(255,100,140,.5);
+  --txt:#4a2030;--txt2:#8b4060;--dim:#d080a0;--mut:#e8b8c8;
+  --cy:#ff96b4;--cy2:#ffc8d8;--blu:#c890c0;--grn:#a0d8a0;
+  --red:#ff6080;--amb:#ffc060;--gl1:rgba(255,150,180,.5);--gl2:rgba(255,200,216,.3);
+}
+[data-theme="sakura"] body{
+  background:#fff0f5;
+  background-image:
+    radial-gradient(circle at 15% 20%,rgba(255,150,180,.25) 0%,transparent 35%),
+    radial-gradient(circle at 85% 30%,rgba(255,200,216,.3) 0%,transparent 35%),
+    radial-gradient(circle at 30% 80%,rgba(255,180,200,.25) 0%,transparent 35%),
+    radial-gradient(circle at 75% 75%,rgba(255,150,180,.2) 0%,transparent 35%);
+  font-family:'Georgia',serif;
+}
+
+/* ========== CRAZY 20: GALAXY ========== */
+[data-theme="galaxy"]{
+  --bg-0:#050318;--bg-1:#050318;--bg-2:#02010c;--sur:#0a0528;
+  --sur2:#100838;--sur3:#180c50;--hov:rgba(120,100,255,.1);--hov2:rgba(120,100,255,.2);
+  --bor:rgba(120,100,255,.3);--bor2:rgba(255,100,200,.5);
+  --txt:#e0dcff;--txt2:#b0a8ff;--dim:#7060c0;--mut:#403080;
+  --cy:#7864ff;--cy2:#ff64c8;--blu:#64a0ff;--grn:#64ffc8;
+  --red:#ff4070;--amb:#ffd040;--gl1:rgba(120,100,255,.7);--gl2:rgba(255,100,200,.5);
+}
+[data-theme="galaxy"] body{
+  background:#050318;
+  background-image:
+    radial-gradient(1px 1px at 20% 30%,#fff 0%,transparent),
+    radial-gradient(1px 1px at 60% 70%,#fff 0%,transparent),
+    radial-gradient(1px 1px at 40% 80%,#fff 0%,transparent),
+    radial-gradient(2px 2px at 80% 20%,#fff 0%,transparent),
+    radial-gradient(2px 2px at 10% 90%,#fff 0%,transparent),
+    radial-gradient(ellipse at 30% 40%,rgba(120,100,255,.25) 0%,transparent 40%),
+    radial-gradient(ellipse at 70% 60%,rgba(255,100,200,.2) 0%,transparent 40%);
+  background-size:150px 150px,200px 200px,180px 180px,300px 300px,250px 250px,auto,auto;
+}
+[data-theme="galaxy"] .brand-mark{
+  animation:galaxyPulse 4s ease-in-out infinite;
+}
+@keyframes galaxyPulse{0%,100%{box-shadow:0 0 20px rgba(120,100,255,.6)}50%{box-shadow:0 0 40px rgba(255,100,200,.9)}}

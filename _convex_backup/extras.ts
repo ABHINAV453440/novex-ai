@@ -1,6 +1,5 @@
-import { query, mutation } from "./_generated/server";
 import { v } from "convex/values";
-import { Id } from "./_generated/dataModel";
+import { query, mutation } from "./_generated/server";
 
 // ============================================================
 // 📅 STUDY PLANNER
@@ -19,7 +18,7 @@ export const listPlans = query({
 export const getPlan = query({
   args: { plan_id: v.string() },
   handler: async (ctx, args) => {
-    return await ctx.db.get(args.plan_id as Id<"study_plans">);
+    return await ctx.db.get(args.plan_id as any);
   },
 });
 
@@ -35,7 +34,6 @@ export const createPlan = mutation({
     plan_json: v.string(),
   },
   handler: async (ctx, args) => {
-    const now = Date.now();
     const id = await ctx.db.insert("study_plans", {
       user_id: args.user_id,
       title: args.title,
@@ -45,8 +43,8 @@ export const createPlan = mutation({
       hours_per_day: args.hours_per_day,
       subjects: args.subjects,
       plan_json: args.plan_json,
-      created: now,
-      updated: now,
+      created: Date.now(),
+      updated: Date.now(),
     });
     return { ok: true, id };
   },
@@ -55,17 +53,13 @@ export const createPlan = mutation({
 export const updatePlanProgress = mutation({
   args: { plan_id: v.string(), task_index: v.number(), done: v.boolean() },
   handler: async (ctx, args) => {
-    const plan = await ctx.db.get(args.plan_id as Id<"study_plans">);
+    const plan = await ctx.db.get(args.plan_id as any);
     if (!plan) return { error: "Not found" };
     let planData: any = {};
-    try {
-      planData = JSON.parse((plan as any).plan_json);
-    } catch {
-      planData = { tasks: [] };
-    }
+    try { planData = JSON.parse(plan.plan_json); } catch { planData = { tasks: [] }; }
     if (!planData.completed) planData.completed = {};
     planData.completed[String(args.task_index)] = args.done;
-    await ctx.db.patch(args.plan_id as Id<"study_plans">, {
+    await ctx.db.patch(args.plan_id as any, {
       plan_json: JSON.stringify(planData),
       updated: Date.now(),
     });
@@ -76,7 +70,7 @@ export const updatePlanProgress = mutation({
 export const deletePlan = mutation({
   args: { plan_id: v.string() },
   handler: async (ctx, args) => {
-    await ctx.db.delete(args.plan_id as Id<"study_plans">);
+    await ctx.db.delete(args.plan_id as any);
     return { ok: true };
   },
 });
@@ -402,7 +396,7 @@ export const getClassByCode = query({
 export const getClass = query({
   args: { class_id: v.string() },
   handler: async (ctx, args) => {
-    return await ctx.db.get(args.class_id as Id<"classes">);
+    return await ctx.db.get(args.class_id as any);
   },
 });
 
@@ -414,9 +408,9 @@ export const joinClass = mutation({
     display_name: v.string(),
   },
   handler: async (ctx, args) => {
-    const cls = await ctx.db.get(args.class_id as Id<"classes">);
+    const cls = await ctx.db.get(args.class_id as any);
     if (!cls) return { error: "Class not found" };
-    const students = [...((cls as any).students || [])];
+    const students = cls.students || [];
     if (students.some((s: any) => s.user_id === args.user_id)) {
       return { ok: true, already_joined: true };
     }
@@ -426,7 +420,7 @@ export const joinClass = mutation({
       display_name: args.display_name,
       joined: Date.now(),
     });
-    await ctx.db.patch(args.class_id as Id<"classes">, { students, updated: Date.now() });
+    await ctx.db.patch(args.class_id as any, { students, updated: Date.now() });
     return { ok: true };
   },
 });
@@ -434,10 +428,10 @@ export const joinClass = mutation({
 export const removeStudent = mutation({
   args: { class_id: v.string(), user_id: v.string() },
   handler: async (ctx, args) => {
-    const cls = await ctx.db.get(args.class_id as Id<"classes">);
+    const cls = await ctx.db.get(args.class_id as any);
     if (!cls) return { error: "Class not found" };
-    const students = ((cls as any).students || []).filter((s: any) => s.user_id !== args.user_id);
-    await ctx.db.patch(args.class_id as Id<"classes">, { students, updated: Date.now() });
+    const students = (cls.students || []).filter((s: any) => s.user_id !== args.user_id);
+    await ctx.db.patch(args.class_id as any, { students, updated: Date.now() });
     return { ok: true };
   },
 });
@@ -445,10 +439,11 @@ export const removeStudent = mutation({
 export const deleteClass = mutation({
   args: { class_id: v.string() },
   handler: async (ctx, args) => {
-    await ctx.db.delete(args.class_id as Id<"classes">);
+    await ctx.db.delete(args.class_id as any);
     return { ok: true };
   },
 });
+
 // ============================================================
 // 📝 ASSIGNMENTS
 // ============================================================
@@ -492,7 +487,7 @@ export const listAssignmentsByClass = query({
 export const getAssignment = query({
   args: { assignment_id: v.string() },
   handler: async (ctx, args) => {
-    return await ctx.db.get(args.assignment_id as Id<"assignments">);
+    return await ctx.db.get(args.assignment_id as any);
   },
 });
 
@@ -559,7 +554,7 @@ export const saveGrade = mutation({
     score: v.number(),
   },
   handler: async (ctx, args) => {
-    await ctx.db.patch(args.submission_id as Id<"submissions">, {
+    await ctx.db.patch(args.submission_id as any, {
       grade_json: args.grade_json,
       score: args.score,
       status: "graded",
@@ -577,7 +572,7 @@ export const deleteAssignment = mutation({
       .withIndex("by_assignment", (q) => q.eq("assignment_id", args.assignment_id))
       .collect();
     for (const s of subs) await ctx.db.delete(s._id);
-    await ctx.db.delete(args.assignment_id as Id<"assignments">);
+    await ctx.db.delete(args.assignment_id as any);
     return { ok: true };
   },
 });
@@ -633,7 +628,7 @@ export const listQuestions = query({
 export const deleteQuestion = mutation({
   args: { question_id: v.string() },
   handler: async (ctx, args) => {
-    await ctx.db.delete(args.question_id as Id<"question_bank">);
+    await ctx.db.delete(args.question_id as any);
     return { ok: true };
   },
 });
@@ -708,7 +703,7 @@ export const listClassMessages = query({
 export const deleteClassMessage = mutation({
   args: { message_id: v.string() },
   handler: async (ctx, args) => {
-    await ctx.db.delete(args.message_id as Id<"class_messages">);
+    await ctx.db.delete(args.message_id as any);
     return { ok: true };
   },
 });
@@ -721,20 +716,16 @@ export const markAttendance = mutation({
     class_id: v.string(),
     teacher_id: v.string(),
     date: v.string(),
-    records: v.array(
-      v.object({
-        user_id: v.string(),
-        display_name: v.string(),
-        present: v.boolean(),
-      })
-    ),
+    records: v.array(v.object({
+      user_id: v.string(),
+      display_name: v.string(),
+      present: v.boolean(),
+    })),
   },
   handler: async (ctx, args) => {
     const existing = await ctx.db
       .query("attendance")
-      .withIndex("by_class_date", (q) =>
-        q.eq("class_id", args.class_id).eq("date", args.date)
-      )
+      .withIndex("by_class_date", (q) => q.eq("class_id", args.class_id).eq("date", args.date))
       .first();
     if (existing) {
       await ctx.db.patch(existing._id, {
@@ -760,9 +751,7 @@ export const getAttendanceByDate = query({
   handler: async (ctx, args) => {
     return await ctx.db
       .query("attendance")
-      .withIndex("by_class_date", (q) =>
-        q.eq("class_id", args.class_id).eq("date", args.date)
-      )
+      .withIndex("by_class_date", (q) => q.eq("class_id", args.class_id).eq("date", args.date))
       .first();
   },
 });
@@ -786,8 +775,7 @@ export const getStudentAttendanceStats = query({
       .query("attendance")
       .withIndex("by_class", (q) => q.eq("class_id", args.class_id))
       .collect();
-    let present = 0,
-      total = 0;
+    let present = 0, total = 0;
     all.forEach((a) => {
       const rec = (a.records || []).find((r: any) => r.user_id === args.user_id);
       if (rec) {
@@ -795,11 +783,7 @@ export const getStudentAttendanceStats = query({
         if (rec.present) present++;
       }
     });
-    return {
-      present,
-      total,
-      pct: total > 0 ? Math.round((present / total) * 100) : 0,
-    };
+    return { present, total, pct: total > 0 ? Math.round((present / total) * 100) : 0 };
   },
 });
 
@@ -809,9 +793,9 @@ export const getStudentAttendanceStats = query({
 export const getClassLeaderboard = query({
   args: { class_id: v.string() },
   handler: async (ctx, args) => {
-    const cls = await ctx.db.get(args.class_id as Id<"classes">);
+    const cls = await ctx.db.get(args.class_id as any);
     if (!cls) return { entries: [] };
-    const students = (cls as any).students || [];
+    const students = cls.students || [];
     const entries: any[] = [];
 
     const allAttempts = await ctx.db.query("quiz_attempts").collect();
@@ -833,9 +817,9 @@ export const getClassLeaderboard = query({
 
       const score = Math.round(
         avgPct * 0.4 +
-          Math.min(quizCount * 2, 20) +
-          Math.min(focusMinutes / 30, 20) +
-          Math.min(streak * 2, 20)
+        Math.min(quizCount * 2, 20) +
+        Math.min(focusMinutes / 30, 20) +
+        Math.min(streak * 2, 20)
       );
 
       entries.push({
@@ -852,9 +836,7 @@ export const getClassLeaderboard = query({
     });
 
     entries.sort((a, b) => b.score - a.score);
-    entries.forEach((e, i) => {
-      e.rank = i + 1;
-    });
+    entries.forEach((e, i) => { e.rank = i + 1; });
     return { entries };
   },
 });
@@ -900,7 +882,7 @@ export const listCertificates = query({
 export const deleteCertificate = mutation({
   args: { cert_id: v.string() },
   handler: async (ctx, args) => {
-    await ctx.db.delete(args.cert_id as Id<"certificates">);
+    await ctx.db.delete(args.cert_id as any);
     return { ok: true };
   },
 });
@@ -949,7 +931,7 @@ export const listMaterials = query({
 export const deleteMaterial = mutation({
   args: { material_id: v.string() },
   handler: async (ctx, args) => {
-    await ctx.db.delete(args.material_id as Id<"study_materials">);
+    await ctx.db.delete(args.material_id as any);
     return { ok: true };
   },
 });
@@ -1004,7 +986,7 @@ export const listClassTimetables = query({
 export const deleteTimetable = mutation({
   args: { timetable_id: v.string() },
   handler: async (ctx, args) => {
-    await ctx.db.delete(args.timetable_id as Id<"timetables">);
+    await ctx.db.delete(args.timetable_id as any);
     return { ok: true };
   },
 });
@@ -1072,7 +1054,7 @@ export const listConversations = query({
         convMap[other_id].unread_count += 1;
       }
     });
-    const list = Object.values(convMap).sort((a: any, b: any) => b.last_created - a.last_created);
+    const list = Object.values(convMap).sort((a, b) => b.last_created - a.last_created);
     return { conversations: list };
   },
 });
@@ -1081,9 +1063,7 @@ export const markDMRead = mutation({
   args: { user_id: v.string(), other_id: v.string() },
   handler: async (ctx, args) => {
     const all = await ctx.db.query("direct_messages").collect();
-    const unread = all.filter(
-      (m) => m.to_id === args.user_id && m.from_id === args.other_id && !m.read
-    );
+    const unread = all.filter((m) => m.to_id === args.user_id && m.from_id === args.other_id && !m.read);
     for (const m of unread) await ctx.db.patch(m._id, { read: true });
     return { ok: true };
   },
@@ -1129,7 +1109,7 @@ export const listVideoLessons = query({
 export const deleteVideoLesson = mutation({
   args: { video_id: v.string() },
   handler: async (ctx, args) => {
-    await ctx.db.delete(args.video_id as Id<"video_lessons">);
+    await ctx.db.delete(args.video_id as any);
     return { ok: true };
   },
 });
@@ -1180,7 +1160,7 @@ export const listHallTickets = query({
 export const deleteHallTicket = mutation({
   args: { ticket_id: v.string() },
   handler: async (ctx, args) => {
-    await ctx.db.delete(args.ticket_id as Id<"hall_tickets">);
+    await ctx.db.delete(args.ticket_id as any);
     return { ok: true };
   },
 });
@@ -1227,7 +1207,7 @@ export const listReading = query({
 export const deleteReading = mutation({
   args: { reading_id: v.string() },
   handler: async (ctx, args) => {
-    await ctx.db.delete(args.reading_id as Id<"reading_list">);
+    await ctx.db.delete(args.reading_id as any);
     return { ok: true };
   },
 });

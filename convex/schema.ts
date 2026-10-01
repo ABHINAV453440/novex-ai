@@ -12,6 +12,7 @@ export default defineSchema({
     display_name: v.string(),
     email_verified: v.boolean(),
     auth_provider: v.string(),
+    google_id: v.optional(v.string()),
     totp_enabled: v.optional(v.boolean()),
     totp_secret: v.optional(v.string()),
     last_login: v.optional(v.number()),
@@ -19,7 +20,8 @@ export default defineSchema({
     updated: v.number(),
   })
     .index("by_username", ["username"])
-    .index("by_email", ["email"]),
+    .index("by_email", ["email"])
+    .index("by_google_id", ["google_id"]),
 
   pending_registrations: defineTable({
     username: v.string(),

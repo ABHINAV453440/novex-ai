@@ -1,13 +1,16 @@
 """
-NOVEX AI v6.0 — Flask Server
-Complete: Chat, Auth, 2FA, Batch 1+2, Lingua, Voice, Rooms, Peer Doubts
+NOVEX AI v7.0 — Flask Server
+Complete: Chat, Auth, 2FA, Quiz v2, Batch 1+2, Lingua, Voice, Rooms, Peer Doubts,
+Real-time Search (Serper + DDGS), 32 Themes
 """
-from flask import Flask, request, jsonify, send_from_directory, Response, stream_with_context, session
+from flask import (Flask, request, jsonify, send_from_directory, Response,
+                   stream_with_context, session)
 from flask_cors import CORS
 from waitress import serve
 from werkzeug.security import generate_password_hash, check_password_hash
 from functools import wraps
-import os, json, uuid, datetime, secrets, asyncio, time, random, base64, re, requests
+import os, json, uuid, datetime, secrets, asyncio, time, random
+import base64, re, requests
 from io import BytesIO
 from collections import defaultdict
 from dotenv import load_dotenv
@@ -42,7 +45,7 @@ def cm(path, args):
     return convex_client.mutation(path, args)
 
 
-# ============ COMPAT ============
+# ============ COMPAT SHIMS ============
 def _active_model():
     return getattr(nv, "ACTIVE_MODEL", None) or getattr(nv, "_ACTIVE_MODEL", "groq:openai/gpt-oss-20b")
 
@@ -58,9 +61,13 @@ def _set_active_model(mid):
 
 def _quiz_active(sid):
     if hasattr(nv, "is_quiz_active"):
-        return nv.is_quiz_active(sid)
+        try:
+            return nv.is_quiz_active(sid)
+        except Exception:
+            pass
     if hasattr(nv, "_quiz_state"):
-        return bool((nv._quiz_state.get(sid) or {}).get("active"))
+        st = nv._quiz_state.get(sid) or {}
+        return bool(st.get("active"))
     return False
 
 
@@ -95,9 +102,12 @@ for d in [UPLOADS_DIR, VOICE_DIR]:
     os.makedirs(d, exist_ok=True)
 
 AVAILABLE_MODELS = [
-    {"id": "groq:openai/gpt-oss-120b", "name": "Novex Pro", "provider": "Groq", "desc": "Best for coding"},
-    {"id": "groq:openai/gpt-oss-20b", "name": "Novex Balanced", "provider": "Groq", "desc": "Speed + quality"},
-    {"id": "groq:llama-3.3-70b-versatile", "name": "Novex Turbo", "provider": "Groq", "desc": "Balanced fast"},
+    {"id": "groq:openai/gpt-oss-120b", "name": "Novex Pro",
+     "provider": "Groq", "desc": "Best for coding"},
+    {"id": "groq:openai/gpt-oss-20b", "name": "Novex Balanced",
+     "provider": "Groq", "desc": "Speed + quality"},
+    {"id": "groq:llama-3.3-70b-versatile", "name": "Novex Turbo",
+     "provider": "Groq", "desc": "Balanced fast"},
 ]
 
 VOICES = {
@@ -117,6 +127,7 @@ VOICES = {
 }
 
 rate_buckets = defaultdict(list)
+
 
 # ============ HELPERS ============
 def current_user():
@@ -178,7 +189,8 @@ def check_rate_limit(key, max_attempts=5, window_sec=300):
 
 
 def get_client_ip():
-    return request.headers.get("X-Forwarded-For", request.remote_addr or "unknown").split(",")[0].strip()
+    return request.headers.get("X-Forwarded-For",
+                              request.remote_addr or "unknown").split(",")[0].strip()
 
 
 def send_email(to, subject, body):
@@ -269,7 +281,8 @@ def _check_badges(user_id):
             if cond and bid not in have:
                 icon, name, desc = nv.BADGES[bid]
                 cm("misc:unlockBadge", {"user_id": user_id, "badge_id": bid,
-                                        "badge_icon": icon, "badge_name": name, "badge_desc": desc})
+                                        "badge_icon": icon, "badge_name": name,
+                                        "badge_desc": desc})
     except Exception as e:
         print(f"[_check_badges] {e}", flush=True)
 
@@ -1038,7 +1051,7 @@ def set_model_endpoint():
 
 
 # ============================================================
-# UPLOAD / QUIZ / SEARCH
+# UPLOAD / QUIZ v2 / SEARCH
 # ============================================================
 @app.route("/upload", methods=["POST"])
 @require_login
@@ -1056,21 +1069,87 @@ def upload():
                     "size": os.path.getsize(path)})
 
 
+# 🎯 QUIZ v2 — categories, presets, stats
 @app.route("/quiz/start", methods=["POST"])
 @require_login
 def quiz_start():
     data = request.get_json() or {}
     topic = (data.get("topic") or "General Knowledge").strip()
     difficulty = (data.get("difficulty") or "medium").strip().lower()
-    count = int(data.get("count") or 5)
-    if count not in [5, 10, 15, 20, 30]:
-        count = 5
-    if difficulty not in ["easy", "medium", "hard"]:
+    count = data.get("count")
+    if difficulty not in nv.DIFFICULTY_PRESETS:
         difficulty = "medium"
+    preset = nv.DIFFICULTY_PRESETS[difficulty]
+    if count is None:
+        count = preset["count"]
+    else:
+        count = int(count)
+        if count < 3:
+            count = 3
+        if count > 30:
+            count = 30
     result = nv.generate_quiz_json(topic, difficulty, count)
     if "error" in result:
         return jsonify(result), 500
     return jsonify(result)
+
+
+@app.route("/quiz/categories", methods=["GET"])
+@require_login
+def quiz_categories():
+    return jsonify({
+        "categories": [{"name": k, "icon": v} for k, v in nv.QUIZ_CATEGORIES.items()],
+        "difficulties": list(nv.DIFFICULTY_PRESETS.keys()),
+        "presets": nv.DIFFICULTY_PRESETS,
+    })
+
+
+@app.route("/quiz/complete", methods=["POST"])
+@require_login
+def quiz_complete():
+    """Award XP + badges for quiz completion."""
+    user = user_by_username(current_user())
+    data = request.get_json() or {}
+    score = int(data.get("score", 0))
+    total = int(data.get("total", 0))
+    difficulty = (data.get("difficulty") or "medium").lower()
+    max_streak = int(data.get("max_streak", 0))
+
+    multiplier = nv.DIFFICULTY_PRESETS.get(difficulty, {}).get("xp", 1.0)
+    base_xp = 25 + score * 10
+    total_xp = int(base_xp * multiplier)
+
+    # Bonus XP
+    if total > 0 and score == total:
+        total_xp += nv.EXP_REWARDS.get("quiz_perfect", 50)
+    if max_streak >= 10:
+        total_xp += nv.EXP_REWARDS.get("quiz_streak_10", 75)
+    elif max_streak >= 5:
+        total_xp += nv.EXP_REWARDS.get("quiz_streak_5", 30)
+
+    try:
+        p = _get_or_create_progress(user["_id"])
+        new_exp = (p.get("exp") or 0) + total_xp
+        lvl = nv.calculate_level(new_exp)
+        cm("misc:updateProgress", {"user_id": user["_id"], "exp": new_exp,
+                                   "level": lvl["level"], "level_icon": lvl["icon"]})
+        cm("misc:logExp", {"user_id": user["_id"], "action": "quiz_complete",
+                           "exp_gained": total_xp,
+                           "meta": f"{score}/{total} {difficulty}"})
+        _increment_counter(user["_id"], "quiz_count")
+        if total > 0 and score == total:
+            _increment_counter(user["_id"], "perfect_quizzes")
+        _check_badges(user["_id"])
+    except Exception as e:
+        print(f"[quiz_complete] {e}", flush=True)
+
+    return jsonify({
+        "ok": True,
+        "exp_gained": total_xp,
+        "multiplier": multiplier,
+        "score": score,
+        "total": total,
+    })
 
 
 @app.route("/search", methods=["POST"])
@@ -1078,10 +1157,33 @@ def quiz_start():
 def web_search_endpoint():
     data = request.get_json() or {}
     q = (data.get("q") or "").strip()
+    max_results = int(data.get("max_results") or 6)
     if not q:
         return jsonify({"error": "Query chahiye"}), 400
-    results = nv.web_search_structured(q, max_results=6)
-    return jsonify({"ok": True, "query": q, "results": results})
+    if max_results > 20:
+        max_results = 20
+    try:
+        results = nv.web_search_structured(q, max_results=max_results)
+        return jsonify({"ok": True, "query": q, "results": results,
+                        "provider": nv._last_search_provider,
+                        "count": len(results)})
+    except Exception as e:
+        print(f"[search endpoint] {e}", flush=True)
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+
+@app.route("/search/providers", methods=["GET"])
+@require_login
+def search_providers():
+    return jsonify({
+        "providers": {
+            "serper": bool(os.getenv("SERPER_API_KEY")),
+            "ddgs": True,
+        },
+        "default": os.getenv("SEARCH_DEFAULT_PROVIDER", "serper"),
+        "max_results": int(os.getenv("SEARCH_MAX_RESULTS", "6")),
+        "region": os.getenv("SEARCH_REGION", "in-en"),
+    })
 
 
 # ============================================================
@@ -1165,23 +1267,6 @@ def gamification_award():
     _award_exp(user["_id"], action, (data.get("meta") or "").strip())
     _check_badges(user["_id"])
     return jsonify({"ok": True})
-
-
-@app.route("/gamification/quiz-complete", methods=["POST"])
-@require_login
-def gamification_quiz_complete():
-    user = user_by_username(current_user())
-    data = request.get_json() or {}
-    score = int(data.get("score", 0))
-    total = int(data.get("total", 0))
-    _award_exp(user["_id"], "quiz_complete")
-    for _ in range(score):
-        _award_exp(user["_id"], "quiz_correct")
-    _increment_counter(user["_id"], "quiz_count")
-    if total > 0 and score == total:
-        _increment_counter(user["_id"], "perfect_quizzes")
-    _check_badges(user["_id"])
-    return jsonify({"ok": True, "exp_gained": 25 + score * 10})
 
 
 # ============================================================
@@ -1399,15 +1484,11 @@ def mock_test_submit(tid):
         questions = json.loads(test["questions_json"])
     except Exception:
         return jsonify({"error": "Invalid test"}), 400
-    correct = 0
-    wrong = 0
-    unattempted = 0
-    total_marks = 0
+    correct = wrong = unattempted = total_marks = 0
     subject_stats = {}
     for i, q in enumerate(questions):
         subj = q.get("subject", "General")
-        if subj not in subject_stats:
-            subject_stats[subj] = {"correct": 0, "wrong": 0, "total": 0}
+        subject_stats.setdefault(subj, {"correct": 0, "wrong": 0, "total": 0})
         subject_stats[subj]["total"] += 1
         ans = next((a for a in answers if a.get("idx") == i), None)
         marks = q.get("marks", 4)
@@ -1488,6 +1569,8 @@ def parent_report_send():
                    report.get("content", ""))
         cm("misc:markParentReportSent", {"id": rid})
     return jsonify({"ok": True})
+
+
 # ============================================================
 # BATCH 2 — Voice Tutor / Rooms / Avatar / Peer Doubts
 # ============================================================
@@ -1510,13 +1593,14 @@ def voice_tutor_message():
     speech = (data.get("speech") or "").strip()
     if not sid or not speech:
         return jsonify({"error": "session_id and speech required"}), 400
-    session = cq("misc:getVoiceSession", {"id": sid})
+    session_data = cq("misc:getVoiceSession", {"id": sid})
     history = []
-    if session:
+    if session_data:
         history = [{"role": m["role"], "content": m["content"]}
-                   for m in session.get("messages", [])]
-    result = nv.voice_tutor_reply(session.get("topic", "General") if session else "General",
-                                   speech, history)
+                   for m in session_data.get("messages", [])]
+    result = nv.voice_tutor_reply(
+        session_data.get("topic", "General") if session_data else "General",
+        speech, history)
     if "error" in result:
         return jsonify(result), 500
     cm("misc:appendVoiceMessage", {"session_id": sid, "role": "user", "content": speech})
@@ -1801,15 +1885,8 @@ def transcribe():
 
 
 # ============================================================
-# 🦜 NOVEX LINGUA
+# LINGUA
 # ============================================================
-@app.route("/languages", methods=["GET"])
-def lingua_languages():
-    from_lang = (request.args.get("from") or "en").strip()
-    langs = cq("language:listLanguages", {"from_lang": from_lang}) or []
-    return jsonify({"languages": langs})
-
-
 @app.route("/languages/all", methods=["GET"])
 def lingua_all_langs():
     from_lang = (request.args.get("from") or "en").strip()
@@ -2070,7 +2147,7 @@ def pyqs_list():
 
 
 # ============================================================
-# CHAT STREAM — ✅ FIXED (chats:appendMessage args)
+# CHAT STREAM
 # ============================================================
 @app.route("/chat-stream", methods=["POST"])
 @require_login
@@ -2112,7 +2189,6 @@ def chat_stream():
         final_message = ((message or "Analyze") + "\n\n[Attached: " + ", ".join(attachments) + "]")
     sender = user["username"] if chat_owner_id != user["_id"] else None
 
-    # ✅ FIXED — only pass optional fields if they have values
     user_msg_payload = {
         "chat_id": chat_id,
         "role": "user",
@@ -2183,10 +2259,17 @@ def chat_stream():
             is_simple = p.startswith(simple_prefixes) or any(w in p for w in simple_words)
             quiz_running = _quiz_active(sid)
 
-            if p.startswith(("search ", "google ", "dhundo ")):
-                q = re.sub(r"^(search|google|dhundo)\s+", "", message, flags=re.IGNORECASE).strip()
+            if p.startswith(("search ", "google ", "dhundo ", "khojo ", "dhoondo ")):
+                q = re.sub(r"^(search|google|dhundo|khojo|dhoondo)\s+", "", message,
+                           flags=re.IGNORECASE).strip()
                 results = nv.web_search_structured(q, max_results=5)
                 full = nv.format_search_results_with_citations(q, results)
+                for i in range(0, len(full), 4):
+                    yield f"data: {json.dumps({'chunk': full[i:i+4]})}\n\n".encode("utf-8")
+            elif p.startswith(("news ", "khabar ", "khabrein ")):
+                topic = re.sub(r"^(news|khabar|khabrein)\s+", "", message,
+                               flags=re.IGNORECASE).strip()
+                full = nv.get_news(topic or None, max_items=5)
                 for i in range(0, len(full), 4):
                     yield f"data: {json.dumps({'chunk': full[i:i+4]})}\n\n".encode("utf-8")
             elif is_simple or is_quiz or quiz_running or _active_model().startswith("ollama:"):
@@ -2418,6 +2501,9 @@ def translate():
     return jsonify(nv.translate_text(text, target, source))
 
 
+# ============================================================
+# STATIC FILES
+# ============================================================
 @app.route("/")
 def index():
     return send_from_directory(".", "index.html")
@@ -2438,6 +2524,40 @@ def sw():
     return send_from_directory(".", "sw.js")
 
 
+@app.route("/themes.css")
+def themes_css():
+    try:
+        return send_from_directory(".", "themes.css")
+    except Exception:
+        return ("/* themes.css not found */", 404, {"Content-Type": "text/css"})
+@app.route("/themes-extra.css")
+def themes_extra_css():
+    try:
+        return send_from_directory(".", "themes-extra.css")
+    except Exception:
+        return ("/* themes-extra.css not found */", 404, {"Content-Type": "text/css"})
+
+
+@app.route("/ui-modes.css")
+def ui_modes_css():
+    try:
+        return send_from_directory(".", "ui-modes.css")
+    except Exception:
+        return ("/* ui-modes.css not found */", 404, {"Content-Type": "text/css"})
+
+
+@app.route("/ui-modes.js")
+def ui_modes_js():
+    try:
+        return send_from_directory(".", "ui-modes.js")
+    except Exception:
+        return ("/* ui-modes.js not found */", 404, {"Content-Type": "application/javascript"})
+
+@app.route("/image/<path:filename>")
+def image(filename):
+    return send_from_directory(".", filename)
+
+
 @app.route("/voice/<path:filename>")
 def voice_file(filename):
     return send_from_directory(VOICE_DIR, filename)
@@ -2456,16 +2576,28 @@ def health():
     except Exception:
         convex_ok = False
     return jsonify({
-        "ok": True, "service": "novex-ai", "version": "6.0",
+        "ok": True, "service": "novex-ai", "version": "7.0",
         "totp": TOTP_AVAILABLE, "brevo": bool(BREVO_API_KEY),
         "convex": convex_ok,
-        "google": bool(os.getenv("GOOGLE_CLIENT_ID")),
-        "session_days": 36500,
-        "deep_explain": True, "session_isolation": True,
-        "doubt_scanner": True, "gamification": True,
-        "srs": True, "lingua": True,
-        "voice_tutor": True, "rooms": True,
-        "peer_doubts": True, "batch1": True,
+        "search": {
+            "serper": bool(os.getenv("SERPER_API_KEY")),
+            "ddgs": True,
+        },
+        "features": {
+            "deep_explain": True,
+            "session_isolation": True,
+            "doubt_scanner": True,
+            "gamification": True,
+            "srs": True,
+            "lingua": True,
+            "voice_tutor": True,
+            "rooms": True,
+            "peer_doubts": True,
+            "batch1": True,
+            "quiz_v2": True,
+            "search_realtime": True,
+            "themes": 32,
+        },
     })
 
 
@@ -2479,10 +2611,13 @@ if __name__ == "__main__":
     PORT = int(os.getenv("PORT", 10000))
     HOST = os.getenv("HOST", "0.0.0.0")
     print("=" * 60)
-    print("  NOVEX AI v6.0")
+    print("  NOVEX AI v7.0")
     print(f"  URL: http://{HOST}:{PORT}")
     print(f"  Convex: {os.getenv('CONVEX_URL', 'NOT SET')}")
     print(f"  Brevo: {'✓' if BREVO_API_KEY else '✗ (console fallback)'}")
     print(f"  2FA: {'✓' if TOTP_AVAILABLE else '✗'}")
+    print(f"  Search: Serper {'✓' if os.getenv('SERPER_API_KEY') else '✗'} + DDGS ✓")
+    print(f"  Quiz: v2 (categories, streaks, speed bonus)")
+    print(f"  Themes: 32 (including 11 realistic)")
     print("=" * 60)
     serve(app, host=HOST, port=PORT, threads=16, send_bytes=1, channel_timeout=300)

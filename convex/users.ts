@@ -20,6 +20,15 @@ export const getByEmail = query({
   },
 });
 
+export const getByGoogleId = query({
+  args: { google_id: v.string() },
+  handler: async (ctx, args) => {
+    return await ctx.db.query("users")
+      .withIndex("by_google_id", (q) => q.eq("google_id", args.google_id))
+      .first();
+  },
+});
+
 export const getById = query({
   args: { id: v.string() },
   handler: async (ctx, args) => {
@@ -39,6 +48,7 @@ export const create = mutation({
     display_name: v.string(),
     email_verified: v.boolean(),
     auth_provider: v.string(),
+    google_id: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const now = Date.now();
@@ -49,9 +59,21 @@ export const create = mutation({
       display_name: args.display_name,
       email_verified: args.email_verified,
       auth_provider: args.auth_provider,
+      google_id: args.google_id,
       created: now,
       updated: now,
     });
+  },
+});
+
+export const setGoogleId = mutation({
+  args: { id: v.string(), google_id: v.string() },
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.id as Id<"users">, {
+      google_id: args.google_id,
+      updated: Date.now(),
+    });
+    return { ok: true };
   },
 });
 
@@ -97,7 +119,6 @@ export const deleteUser = mutation({
   args: { id: v.string() },
   handler: async (ctx, args) => {
     const uid = args.id;
-    // Delete related data (best-effort)
     const tables = [
       "chats", "docs", "flashcards", "memory", "personas",
       "projects", "reminders", "settings", "user_progress",
@@ -110,7 +131,7 @@ export const deleteUser = mutation({
           .collect();
         for (const it of items) await ctx.db.delete(it._id);
       } catch {
-        // Table might not have by_user index
+        // Table may not have by_user index
       }
     }
     await ctx.db.delete(args.id as Id<"users">);
