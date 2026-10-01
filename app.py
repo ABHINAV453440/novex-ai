@@ -1488,8 +1488,6 @@ def parent_report_send():
                    report.get("content", ""))
         cm("misc:markParentReportSent", {"id": rid})
     return jsonify({"ok": True})
-
-
 # ============================================================
 # BATCH 2 — Voice Tutor / Rooms / Avatar / Peer Doubts
 # ============================================================
@@ -1697,12 +1695,14 @@ def peer_doubts_create():
     image_url = (data.get("image_url") or "").strip()
     if not title or not body:
         return jsonify({"error": "Title aur body required"}), 400
-    did = cm("misc:createPeerDoubt", {"user_id": user["_id"], "username": user["username"],
-                                       "display_name": user.get("display_name", user["username"]),
-                                       "avatar": (user.get("display_name") or "U")[0].upper(),
-                                       "title": title[:200], "body": body[:3000],
-                                       "subject": subject, "topic": topic,
-                                       "image_url": image_url or None})
+    payload = {"user_id": user["_id"], "username": user["username"],
+               "display_name": user.get("display_name", user["username"]),
+               "avatar": (user.get("display_name") or "U")[0].upper(),
+               "title": title[:200], "body": body[:3000],
+               "subject": subject, "topic": topic}
+    if image_url:
+        payload["image_url"] = image_url
+    did = cm("misc:createPeerDoubt", payload)
     _award_exp(user["_id"], "chat_message")
     return jsonify({"ok": True, "id": did})
 
@@ -2019,10 +2019,13 @@ def lingua_chat_message(code):
     history = [{"role": m["role"], "content": m["content"]} for m in convo.get("messages", [])]
     result = nv.language_chat(code, message, convo.get("scenario", ""), history)
     cm("language:appendConvoMessage", {"convo_id": convo_id, "role": "user", "content": message})
-    cm("language:appendConvoMessage", {"convo_id": convo_id, "role": "assistant",
-                                         "content": result.get("reply", ""),
-                                         "translation": result.get("translation", ""),
-                                         "correction": result.get("correction", "")})
+    msg_payload = {"convo_id": convo_id, "role": "assistant",
+                   "content": result.get("reply", "")}
+    if result.get("translation"):
+        msg_payload["translation"] = result.get("translation")
+    if result.get("correction"):
+        msg_payload["correction"] = result.get("correction")
+    cm("language:appendConvoMessage", msg_payload)
     _award_exp(user["_id"], "language_chat")
     return jsonify({"ok": True, **result})
 
@@ -2067,7 +2070,7 @@ def pyqs_list():
 
 
 # ============================================================
-# CHAT STREAM
+# CHAT STREAM — ✅ FIXED (chats:appendMessage args)
 # ============================================================
 @app.route("/chat-stream", methods=["POST"])
 @require_login
@@ -2097,17 +2100,30 @@ def chat_stream():
         title_src = message or (attachments[0] if attachments else "New chat")
         if deep_explain:
             title_src = "💡 " + title_src
-        chat_id = cm("chats:create", {"user_id": chat_owner_id,
-                                       "title": title_src[:45] + ("…" if len(title_src) > 45 else ""),
-                                       "project_id": project_id})
+        create_payload = {
+            "user_id": chat_owner_id,
+            "title": title_src[:45] + ("…" if len(title_src) > 45 else ""),
+        }
+        if project_id:
+            create_payload["project_id"] = project_id
+        chat_id = cm("chats:create", create_payload)
     final_message = message
     if attachments:
         final_message = ((message or "Analyze") + "\n\n[Attached: " + ", ".join(attachments) + "]")
     sender = user["username"] if chat_owner_id != user["_id"] else None
-    cm("chats:appendMessage", {"chat_id": chat_id, "role": "user",
-                                "content": ("💡 Deep Explain: " if deep_explain else "") + final_message,
-                                "attachments": attachments if attachments else None,
-                                "sender": sender})
+
+    # ✅ FIXED — only pass optional fields if they have values
+    user_msg_payload = {
+        "chat_id": chat_id,
+        "role": "user",
+        "content": ("💡 Deep Explain: " if deep_explain else "") + final_message,
+    }
+    if attachments:
+        user_msg_payload["attachments"] = attachments
+    if sender:
+        user_msg_payload["sender"] = sender
+    cm("chats:appendMessage", user_msg_payload)
+
     user_settings = cq("misc:getSettings", {"user_id": user["_id"]}) or {}
     persona_items = cq("misc:listPersonas", {"user_id": user["_id"]}) or []
     user_personas = {p["slug"]: {"name": p["name"], "prompt": p["prompt"], "icon": p["icon"]}
