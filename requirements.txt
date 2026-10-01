@@ -1,0 +1,12 @@
+﻿flask
+flask-cors
+waitress
+python-dotenv
+requests
+convex
+werkzeug
+pyotp
+qrcode[pil]
+edge-tts
+ddgs
+pypdf

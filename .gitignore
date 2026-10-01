@@ -1,0 +1,13 @@
+__pycache__/
+*.pyc
+_convex_backup/
+venv/
+.env
+.env.local
+uploads/
+voice/
+novex_edu_store.json
+node_modules/
+.convex/
+*.log
+.DS_Store

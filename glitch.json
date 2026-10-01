@@ -1,0 +1,8 @@
+{
+  "install": "pip install -r requirements.txt",
+  "start": "python app.py",
+  "watch": {
+    "install": ["requirements.txt"],
+    "restart": ["app.py", "novex.py"]
+  }
+}
