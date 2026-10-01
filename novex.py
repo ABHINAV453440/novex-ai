@@ -1,19 +1,10 @@
 """
-NOVEX AI — Backend Engine v7.0
-Features: Chat, Deep Explain, Doubt Scanner, SRS, Gamification,
-Language Learning (Lingua), Voice Tutor, Batch 1 & 2 tools,
-Real-time Search (Serper + DDGS), Upgraded Quiz Engine
+NOVEX AI — Backend Engine v8.0
+ChatGPT-quality replies + All features
 """
 from __future__ import annotations
-import base64
-import datetime
-import hashlib
-import json as _json
-import os
-import random as _random
-import re
-import time as _time
-import uuid
+import base64, datetime, hashlib, json as _json, os, random as _random
+import re, time as _time, uuid
 from collections import defaultdict
 from threading import Lock
 from urllib.parse import quote
@@ -25,10 +16,10 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+# ============ CONFIG ============
 GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
 CONVEX_URL = (os.getenv("CONVEX_URL") or "").rstrip("/")
 
-# Search config
 SERPER_API_KEY = os.getenv("SERPER_API_KEY", "")
 SEARCH_PROVIDER = os.getenv("SEARCH_DEFAULT_PROVIDER", "serper").lower()
 SEARCH_MAX_RESULTS = int(os.getenv("SEARCH_MAX_RESULTS", "6"))
@@ -39,7 +30,160 @@ GROQ_MODELS = ["openai/gpt-oss-120b", "openai/gpt-oss-20b", "llama-3.3-70b-versa
 DEFAULT_MODEL = "groq:openai/gpt-oss-120b"
 _ACTIVE_MODEL = DEFAULT_MODEL
 
-# ---------- PER-SESSION STATE ----------
+IST = datetime.timezone(datetime.timedelta(hours=5, minutes=30))
+
+# ============================================================
+# 🌟 CHATGPT-LEVEL SYSTEM PROMPTS
+# ============================================================
+DEFAULT_SYSTEM = """You are NOVEX — a helpful, thoughtful, and highly capable AI assistant.
+
+## Response Style (ChatGPT-level quality):
+
+1. **Structured answers** — use headings (##), bullets, numbered lists
+2. **Bold key concepts** for scannability
+3. **Code blocks** with language tags for any code
+4. **Tables** when comparing 3+ items
+5. **Clickable links** as [title](url) — ALWAYS include real URLs
+6. **Real examples** — not just theory
+7. **Step-by-step** for how-to questions
+8. **Analogies** for complex concepts
+9. **Match user's language** — Hindi, English, or Hinglish
+10. **Concise but complete** — no fluff, no padding
+
+## Response Structure:
+
+**HOW-TO questions:**
+- Quick answer (1 line)
+- 3-5 numbered steps
+- Code/example if applicable
+- Common mistakes (optional)
+
+**EXPLAIN questions:**
+- Simple answer (1-2 lines)
+- Analogy
+- Detailed breakdown with headings
+- Example
+- Key takeaways
+
+**COMPARISON:**
+- Table with differences
+- When to use which
+- Pros/cons
+
+**CODE:**
+- Complete runnable code
+- Hindi comments on tricky lines
+- Explanation after code
+
+**LINKS:**
+- Always give full URLs as markdown: [Title](https://full-url.com)
+- Wikipedia, official docs, GitHub, news — actual working links
+- Never say "you can find it" without giving link
+
+## NEVER:
+- Give shallow answers
+- Use "as an AI language model" disclaimers
+- Refuse reasonable requests
+- Pad with useless filler
+- Use emojis excessively (1-2 max)
+
+Aim: ChatGPT/Claude-level quality. Make every response worth reading."""
+
+
+DEEP_EXPLAIN_SYSTEM = """You are NOVEX in DEEP EXPLAIN mode — world-class teacher.
+
+## Structure:
+
+### 🎯 One-line Answer
+Single simple sentence.
+
+### 🌟 Real-life Analogy
+Connect to something familiar — cricket, chai, traffic, cooking, school.
+
+### 📚 Detailed Breakdown
+Numbered steps with clear headings.
+
+### 💡 Concrete Example
+Walk through real example step-by-step with numbers/code.
+
+### ⚠️ Common Mistakes
+2-3 mistakes students typically make.
+
+### ✅ Summary
+2-line essence.
+
+## Formatting:
+- **Bold** for key terms
+- `code` for variables/functions
+- Code blocks with language tags
+- Tables when comparing
+- [Clickable links](https://example.com) for references
+- Match user's language
+
+NEVER shallow. Explain WHY, not just WHAT."""
+
+
+PERSONAS = {
+    "default": DEFAULT_SYSTEM,
+    "coder": """You are NOVEX in CODER mode — senior engineer, 15+ years experience.
+
+RULES:
+1. Complete runnable code — not snippets
+2. Type hints for Python
+3. Error handling — try/except, edge cases
+4. Hindi comments on non-obvious lines
+5. Explain after code
+6. Production quality
+7. Mention alternatives when 2+ approaches exist
+
+Format: Code block first, then explanation. Never partial code.""",
+    "webdev": """You are NOVEX in WEB DEV mode — full-stack engineer.
+
+RULES:
+1. Mobile-first responsive
+2. Semantic HTML5
+3. Modern CSS (flex/grid/custom props)
+4. Vanilla JS unless framework asked
+5. Complete files, copy-paste ready
+6. Accessibility (aria, keyboard)
+
+Format: HTML + CSS + JS in separate code blocks.""",
+    "teacher": """You are NOVEX in TEACHER mode — patient, clear, structured.
+
+RULES:
+1. Assume no prior knowledge
+2. Everyday examples (cricket, food, daily life)
+3. Step-by-step
+4. End with a mini-quiz question
+5. Encouraging tone
+6. Simple language, no jargon
+
+Perfect for students of all ages.""",
+    "friend": """You are NOVEX in FRIEND mode — casual, fun.
+
+RULES:
+1. Hinglish natural mix
+2. Short punchy (2-3 lines usually)
+3. 1-2 emojis max
+4. Casual tone
+5. Skip formality
+
+Example: "Arre yaar, simple hai! Bas yeh karo..." """,
+    "guru": """You are NOVEX in GURU mode — deep, philosophical, wise.
+
+RULES:
+1. Warm compassionate tone 🙏
+2. Deeper meaning beyond surface
+3. Indian philosophy analogies
+4. Practical wisdom
+5. Encourage reflection
+
+End with a thought-provoking line.""",
+}
+
+# ============================================================
+# PER-SESSION STATE
+# ============================================================
 _HISTORY_LOCK = Lock()
 _chat_history: dict[str, list] = defaultdict(list)
 _last_code: dict[str, str] = defaultdict(str)
@@ -54,29 +198,9 @@ _quiz_state: dict[str, dict] = defaultdict(lambda: {
 MAX_HISTORY = 20
 _on_usage = None
 
-# ---------- CONVEX ----------
-def _convex_enabled() -> bool:
-    return bool(CONVEX_URL)
-
-def _convex_call(kind, name, args):
-    if not _convex_enabled():
-        return None
-    try:
-        r = requests.post(f"{CONVEX_URL}/api/{kind}",
-                          json={"path": name, "args": args, "format": "json"},
-                          timeout=15)
-        if r.status_code == 200:
-            data = r.json()
-            return data.get("value") if isinstance(data, dict) and "value" in data else data
-    except Exception as e:
-        print(f"[convex:{kind}:{name}] {e}", flush=True)
-    return None
-
-def _convex_query(name, args): return _convex_call("query", name, args)
-def _convex_mutation(name, args): return _convex_call("mutation", name, args)
 
 # ============================================================
-# SEARCH — Serper (primary) + DDGS (fallback)
+# SEARCH — Serper + DDGS
 # ============================================================
 _SEARCH_CACHE = {}
 _SEARCH_CACHE_TTL = 300
@@ -107,47 +231,35 @@ def _search_serper(query, max_results=6):
         res = requests.post(
             "https://google.serper.dev/search",
             headers={"X-API-KEY": SERPER_API_KEY, "Content-Type": "application/json"},
-            json={
-                "q": query,
-                "num": max_results,
-                "gl": SEARCH_REGION.split("-")[-1] if "-" in SEARCH_REGION else "in",
-                "hl": "en",
-            },
-            timeout=12,
-        )
+            json={"q": query, "num": max_results,
+                  "gl": SEARCH_REGION.split("-")[-1] if "-" in SEARCH_REGION else "in",
+                  "hl": "en"},
+            timeout=12)
         if res.status_code != 200:
-            print(f"[search:serper] HTTP {res.status_code}", flush=True)
             return []
         data = res.json()
         out = []
         kg = data.get("knowledgeGraph", {})
         if kg and kg.get("title"):
-            out.append({
-                "title": kg.get("title", "")[:200],
-                "url": kg.get("descriptionLink") or kg.get("website", ""),
-                "snippet": (kg.get("description") or "")[:400],
-                "source": "google-kg",
-            })
+            out.append({"title": kg.get("title", "")[:200],
+                        "url": kg.get("descriptionLink") or kg.get("website", ""),
+                        "snippet": (kg.get("description") or "")[:400],
+                        "source": "google-kg"})
         ab = data.get("answerBox", {})
         if ab:
             text = ab.get("answer") or ab.get("snippet") or ""
             if text:
-                out.insert(0, {
-                    "title": ab.get("title", "Quick Answer"),
-                    "url": ab.get("link", ""),
-                    "snippet": str(text)[:400],
-                    "source": "google-answer",
-                })
+                out.insert(0, {"title": ab.get("title", "Quick Answer"),
+                               "url": ab.get("link", ""),
+                               "snippet": str(text)[:400],
+                               "source": "google-answer"})
         for r in data.get("organic", [])[:max_results]:
             url = (r.get("link") or "").strip()
-            if not url:
-                continue
-            out.append({
-                "title": (r.get("title") or "").strip()[:200],
-                "url": url,
-                "snippet": (r.get("snippet") or "").strip()[:400],
-                "source": "google",
-            })
+            if url:
+                out.append({"title": (r.get("title") or "").strip()[:200],
+                            "url": url,
+                            "snippet": (r.get("snippet") or "").strip()[:400],
+                            "source": "google"})
         return out[:max_results]
     except Exception as e:
         print(f"[search:serper] {e}", flush=True)
@@ -163,14 +275,11 @@ def _search_ddgs(query, max_results=6):
         out = []
         for r in results:
             url = (r.get("href") or r.get("url") or "").strip()
-            if not url:
-                continue
-            out.append({
-                "title": (r.get("title") or "").strip()[:200],
-                "url": url,
-                "snippet": (r.get("body") or "").strip()[:400],
-                "source": "duckduckgo",
-            })
+            if url:
+                out.append({"title": (r.get("title") or "").strip()[:200],
+                            "url": url,
+                            "snippet": (r.get("body") or "").strip()[:400],
+                            "source": "duckduckgo"})
         return out
     except Exception as e:
         print(f"[search:ddgs] {e}", flush=True)
@@ -182,13 +291,10 @@ def web_search_structured(query, max_results=None):
     if not query or not query.strip():
         return []
     max_results = max_results or SEARCH_MAX_RESULTS
-    query = query.strip()
     cache_key = hashlib.md5(f"{query}:{max_results}:{SEARCH_PROVIDER}".encode()).hexdigest()
     cached = _cache_get(cache_key)
     if cached:
-        print(f"[search] cache hit: {query[:40]}", flush=True)
         return cached
-
     order = ["ddgs", "serper"] if SEARCH_PROVIDER == "ddgs" else ["serper", "ddgs"]
     results = []
     used = None
@@ -199,10 +305,7 @@ def web_search_structured(query, max_results=None):
             results = _search_ddgs(query, max_results)
         if results:
             used = provider
-            print(f"[search] ✓ {provider}: {len(results)} results", flush=True)
             break
-        else:
-            print(f"[search] ✗ {provider}: 0 results", flush=True)
     _last_search_provider = used or "none"
     _cache_set(cache_key, results)
     return results
@@ -210,14 +313,14 @@ def web_search_structured(query, max_results=None):
 
 def format_search_results_with_citations(query, results):
     if not results:
-        return f"### 🔍 Search: {query}\n\n_Koi result nahi mila. Try different keywords._\n"
+        return f"### 🔍 Search: {query}\n\n_Koi result nahi mila._\n"
     out = f"### 🔍 Search: {query}\n\n"
     for i, r in enumerate(results, 1):
         out += f"**[{i}] {r.get('title', 'Untitled')}**\n"
         if r.get('snippet'):
             out += f"{r['snippet']}\n\n"
         if r.get('url'):
-            out += f"🔗 [Source]({r['url']})"
+            out += f"🔗 [{r['url']}]({r['url']})"
             if r.get('source'):
                 out += f" · `{r['source']}`"
             out += "\n\n---\n\n"
@@ -232,11 +335,10 @@ def web_search(query):
 def get_news(topic=None, max_items=5):
     try:
         with DDGS() as ddgs:
-            query = topic or "India"
-            news = list(ddgs.news(query, max_results=max_items, region=SEARCH_REGION))
+            news = list(ddgs.news(topic or "India", max_results=max_items, region=SEARCH_REGION))
         if not news:
-            return f"**News** ({query}): koi result nahi mila."
-        out = f"### 📰 Latest News — {query}\n\n"
+            return f"**News** ({topic or 'India'}): koi result nahi mila."
+        out = f"### 📰 Latest News — {topic or 'India'}\n\n"
         for i, n in enumerate(news, 1):
             title = (n.get("title") or "").strip()
             url = n.get("url", "") or n.get("href", "")
@@ -252,15 +354,14 @@ def get_news(topic=None, max_items=5):
             if body:
                 out += f"{body}\n\n"
             if url:
-                out += f"🔗 [Read more]({url})\n\n"
+                out += f"🔗 [Read full article]({url})\n\n"
         return out.strip()
     except Exception as e:
-        print(f"[news] {e}", flush=True)
         return f"News error: {e}"
 
 
 # ============================================================
-# GROQ
+# GROQ CALL
 # ============================================================
 def _groq_call(prompt, temp=0.7, timeout=60, model=None, system=None):
     if not GROQ_API_KEY:
@@ -292,34 +393,6 @@ def _models_for_call():
         fb.insert(0, pref)
     return fb
 
-
-# ============================================================
-# SYSTEM PROMPTS
-# ============================================================
-DEEP_EXPLAIN_SYSTEM = """You are NOVEX in DEEP EXPLAIN mode — a world-class teacher.
-
-RULES:
-1. Start with a ONE-LINE simple answer.
-2. Then a real-life analogy (cricket, chai, traffic, monsoon).
-3. Break into 3-5 numbered steps with headings.
-4. Concrete example, walk step-by-step.
-5. Common mistakes section if relevant.
-6. End with 2-line summary.
-7. Markdown — bold, lists, tables when comparing.
-8. Code in proper blocks.
-9. Match user's language (Hindi/English/Hinglish).
-10. Add clickable links where relevant.
-
-NEVER give shallow answers."""
-
-PERSONAS = {
-    "default": "You are NOVEX, helpful AI assistant.\n\nSTYLE:\n1. Match energy.\n2. Conversational.\n3. No unnecessary headings.\n4. Reply in user's language.\n5. Brevity is a feature.",
-    "coder": "You are NOVEX in CODER mode — senior engineer.\nRULES: Production code, type hints, error handling, Hindi comments on tricky lines. Code first.",
-    "webdev": "You are NOVEX in WEB DEV mode.\nRULES: Mobile-first, semantic HTML5, modern CSS, vanilla JS. Complete code.",
-    "teacher": "You are NOVEX in TEACHER mode.\nRULES: Clear step-by-step with one good example.",
-    "friend": "You are NOVEX in FRIEND mode. Casual Hinglish. Short punchy.",
-    "guru": "You are NOVEX in GURU mode. Deep philosophy. Warm tone. 🙏🌸",
-}
 
 # ============================================================
 # VISION
@@ -478,6 +551,13 @@ def _strip_json_fence(s):
     return s
 
 
+def _sanitize_json(s):
+    s = re.sub(r',(\s*[}\]])', r'\1', s)
+    s = s.replace('"', '"').replace('"', '"').replace(''', "'").replace(''', "'")
+    s = re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f]', '', s)
+    return s
+
+
 # ============================================================
 # MEMORY
 # ============================================================
@@ -496,7 +576,7 @@ def extract_facts(text):
     if s == -1 or e == -1:
         return []
     try:
-        arr = _json.loads(result[s:e+1])
+        arr = _json.loads(_sanitize_json(result[s:e+1]))
         return [str(x).strip() for x in arr if str(x).strip() and len(str(x)) < 200]
     except Exception:
         return []
@@ -509,7 +589,7 @@ def generate_flashcards(source_text, count=10):
     prompt = (f"Generate exactly {count} flashcards.\n\n"
               'Return ONLY JSON:\n'
               '{"title": "...", "cards": [{"front": "...", "back": "..."}]}\n\n'
-              f"Rules: {count} cards, match source language, NO markdown.\n\n"
+              f"Rules: {count} cards, match source language, NO markdown, NO trailing commas.\n\n"
               f"Content:\n{source_text[:6000]}")
     result = _groq_call(prompt, temp=0.5, timeout=90)
     if not result:
@@ -519,7 +599,7 @@ def generate_flashcards(source_text, count=10):
     if s == -1 or e == -1:
         return {"error": "Bad format"}
     try:
-        data = _json.loads(result[s:e+1])
+        data = _json.loads(_sanitize_json(result[s:e+1]))
     except Exception as ex:
         return {"error": f"Parse failed: {ex}"}
     cleaned = []
@@ -558,7 +638,7 @@ def generate_document(topic, style="essay", length="medium", language="hindi"):
     if s == -1 or e == -1:
         return {"error": "Bad outline"}
     try:
-        outline_data = _json.loads(outline_result[s:e+1])
+        outline_data = _json.loads(_sanitize_json(outline_result[s:e+1]))
     except Exception:
         return {"error": "Parse failed"}
     title = str(outline_data.get("title", topic))[:100]
@@ -568,8 +648,8 @@ def generate_document(topic, style="essay", length="medium", language="hindi"):
     full = f"# {title}\n\n"
     for i, section in enumerate(outline, 1):
         sp = (f"Write section {i} of {style_desc}.\nTitle: {title}\nSection: {section}\n"
-              f"Language: {lang_name}\n\nRules: 100-350 words, markdown, "
-              f"start with '## {section}'.\n\nContext:\n{full[-1500:]}\n\nONLY this section.")
+              f"Language: {lang_name}\n\nRules: 100-350 words, markdown.\n\n"
+              f"Context:\n{full[-1500:]}\n\nONLY this section.")
         sc = _groq_call(sp, temp=0.75, timeout=90)
         full += (sc.strip() if sc else f"## {section}\n\n_Failed_") + "\n\n"
     return {"ok": True, "title": title, "outline": outline, "content": full.strip()}
@@ -584,7 +664,7 @@ def parse_reminder(text):
                 "याद दिला", "याद रख", "याद दिलाओ"]
     if not any(tr in t for tr in triggers):
         return None
-    now = datetime.datetime.now()
+    now = datetime.datetime.now(IST)
     target = now.replace(second=0, microsecond=0)
     day_offset = 0
     if "parso" in t or "परसों" in t:
@@ -626,6 +706,27 @@ def parse_reminder(text):
 
 
 # ============================================================
+# TIME (IST)
+# ============================================================
+def get_time():
+    now = datetime.datetime.now(IST)
+    days_hi = ["Somvar", "Mangalvar", "Budhvar", "Guruvar", "Shukravar", "Shanivar", "Ravivar"]
+    return f"Abhi **{now.strftime('%I:%M %p')}**, {days_hi[now.weekday()]}, {now.day}/{now.month}/{now.year} (IST) ⏰"
+
+
+def get_day_info(query):
+    today = datetime.datetime.now(IST).date()
+    fmt = lambda d: f"{d.strftime('%A')}, {d.day}/{d.month}/{d.year}"
+    if "parso" in query:
+        return f"Parso: **{fmt(today + datetime.timedelta(days=2))}**"
+    if "kal" in query:
+        return f"Kal: **{fmt(today + datetime.timedelta(days=1))}**"
+    if "aaj" in query:
+        return f"Aaj: **{fmt(today)}**"
+    return fmt(today)
+
+
+# ============================================================
 # TRANSLATION
 # ============================================================
 _LANG_MAP = {
@@ -663,7 +764,7 @@ def translate_text(text, target_code="hi", source_code="auto"):
 
 
 # ============================================================
-# 🎯 UPGRADED QUIZ ENGINE v2
+# QUIZ v2
 # ============================================================
 QUIZ_CATEGORIES = {
     "General Knowledge": "🌍", "Coding": "💻", "Mathematics": "🧮",
@@ -688,49 +789,56 @@ def generate_quiz_json(topic="General Knowledge", difficulty="medium", count=5):
         "hard": "tricky, multi-step, edge cases",
         "expert": "advanced, nuanced, competitive exam level",
     }
-    prompt = f"""You are a quiz master creating a high-quality MCQ quiz.
+    prompt = f"""Generate exactly {count} multiple-choice quiz questions.
 
-Topic: **{topic}**
-Difficulty: **{difficulty}** ({diff_guide.get(difficulty, 'medium')})
-Number of questions: **{count}**
+Topic: {topic}
+Difficulty: {difficulty} ({diff_guide.get(difficulty, 'medium')})
 
-STRICT RULES:
-1. Questions and options in Hindi (Devanagari script)
-2. Exactly 4 options per question (A, B, C, D)
-3. Only ONE option should be clearly correct
-4. Wrong options (distractors) should be plausible but incorrect
-5. Include a 1-2 sentence explanation for the correct answer
-6. Vary question types: fact, reasoning, application, comparison
-7. No duplicate questions
-8. Answer field must be exactly: "A" or "B" or "C" or "D"
+CRITICAL RULES:
+- Questions and options in Hindi (Devanagari script)
+- Exactly 4 options per question
+- Answer field is exactly one of: "A", "B", "C", "D"
+- Include 1-2 line explanation in Hindi
+- NO trailing commas anywhere
+- NO unescaped quotes inside strings
+- NO comments
+- NO markdown code fences
+- Output must be a VALID JSON array
 
-Return ONLY valid JSON array (no markdown, no code fence):
-[
-  {{
-    "q": "Question text here?",
-    "options": ["Option A text", "Option B text", "Option C text", "Option D text"],
-    "answer": "B",
-    "explanation": "Why B is correct...",
-    "difficulty": "{difficulty}",
-    "tags": ["tag1", "tag2"]
-  }}
-]
+Return ONLY JSON:
+[{{"q":"सवाल?","options":["opt1","opt2","opt3","opt4"],"answer":"A","explanation":"कारण"}}]
 
-Generate exactly {count} questions now."""
+Generate exactly {count} questions."""
 
-    content = _groq_call(prompt, temp=0.85, timeout=120)
-    if not content:
-        return {"error": "Quiz generation failed"}
+    raw = None
+    for attempt, temp in enumerate([0.7, 0.5]):
+        content = _groq_call(prompt, temp=temp, timeout=120)
+        if not content:
+            continue
+        content = _strip_json_fence(content)
+        s, e = content.find("["), content.rfind("]")
+        if s == -1 or e == -1:
+            continue
+        json_str = _sanitize_json(content[s:e+1])
+        try:
+            raw = _json.loads(json_str)
+            break
+        except Exception as ex:
+            print(f"[quiz] Attempt {attempt+1} failed: {ex}", flush=True)
+            if attempt == 1:
+                matches = re.findall(
+                    r'\{\s*"q"\s*:\s*"[^"]*"\s*,\s*"options"\s*:\s*\[[^\]]*\]\s*,\s*"answer"\s*:\s*"[A-D]"[^}]*\}',
+                    json_str
+                )
+                try:
+                    raw = [_json.loads(m) for m in matches if m]
+                    if raw:
+                        break
+                except Exception:
+                    pass
 
-    content = _strip_json_fence(content)
-    s, e = content.find("["), content.rfind("]")
-    if s == -1 or e == -1:
-        return {"error": "Bad format"}
-
-    try:
-        raw = _json.loads(content[s:e+1])
-    except Exception as ex:
-        return {"error": f"Parse failed: {ex}"}
+    if not raw:
+        return {"error": "Quiz generation failed — try a different topic"}
 
     cleaned = []
     seen_q = set()
@@ -758,31 +866,20 @@ Generate exactly {count} questions now."""
         am = re.search(r"[A-D]", answer_raw)
         answer_letter = am.group(0) if am else "A"
         expl = re.sub(r"\s+", " ", str(q.get("explanation", "")).replace("<br>", " ")).strip()
-        tags = q.get("tags", [])
-        if not isinstance(tags, list):
-            tags = []
         cleaned.append({
-            "q": q_text,
-            "options": clean_opts,
-            "answer": answer_letter,
-            "explanation": expl,
-            "difficulty": difficulty,
-            "tags": [str(t)[:30] for t in tags[:3]],
+            "q": q_text, "options": clean_opts, "answer": answer_letter,
+            "explanation": expl, "difficulty": difficulty, "tags": [],
         })
         seen_q.add(q_text.lower())
 
     if not cleaned:
-        return {"error": "No valid questions generated"}
+        return {"error": "No valid questions — try a different topic"}
 
     preset = DIFFICULTY_PRESETS.get(difficulty, DIFFICULTY_PRESETS["medium"])
     return {
-        "ok": True,
-        "topic": topic.title(),
-        "difficulty": difficulty,
-        "count": len(cleaned),
-        "time_per_q": preset["time"],
-        "hint_available": preset["hint"],
-        "xp_multiplier": preset["xp"],
+        "ok": True, "topic": topic.title(), "difficulty": difficulty,
+        "count": len(cleaned), "time_per_q": preset["time"],
+        "hint_available": preset["hint"], "xp_multiplier": preset["xp"],
         "questions": cleaned,
     }
 
@@ -821,14 +918,12 @@ def _finalize_quiz(session_id):
     else:
         emoji, msg = "📚", "Keep practicing!"
     st["active"] = False
-    max_streak = st.get("max_streak", 0)
     return (f"## {emoji} Quiz complete!\n\n"
             f"- **Topic:** {st['topic']}\n"
-            f"- **Difficulty:** {st['difficulty'].title()}\n"
             f"- **Score:** **{score}/{total}** ({pct}%)\n"
-            f"- **Max Streak:** 🔥 {max_streak}\n"
+            f"- **Max Streak:** 🔥 {st.get('max_streak', 0)}\n"
             f"- **Result:** {msg}\n\n"
-            f"_New quiz: `/quiz` or `quiz on <topic>`_")
+            f"_New quiz: `/quiz`_")
 
 
 def start_quiz(session_id, topic="General Knowledge", difficulty="medium", count=None):
@@ -839,20 +934,11 @@ def start_quiz(session_id, topic="General Knowledge", difficulty="medium", count
     if "error" in data:
         return f"⚠️ {data['error']}"
     _quiz_state[session_id] = {
-        "active": True,
-        "topic": data["topic"],
-        "difficulty": data["difficulty"],
-        "questions": data["questions"],
-        "current_index": 0,
-        "score": 0,
-        "correct": 0,
-        "wrong": 0,
-        "user_answers": [],
-        "streak": 0,
-        "max_streak": 0,
-        "time_left": data.get("time_per_q", 30),
-        "hint_used": False,
-        "hint_available": data.get("hint_available", 1),
+        "active": True, "topic": data["topic"], "difficulty": data["difficulty"],
+        "questions": data["questions"], "current_index": 0, "score": 0,
+        "correct": 0, "wrong": 0, "user_answers": [],
+        "streak": 0, "max_streak": 0, "time_left": data.get("time_per_q", 30),
+        "hint_used": False, "hint_available": data.get("hint_available", 1),
         "xp_multiplier": data.get("xp_multiplier", 1.0),
         "question_start": _time.time(),
     }
@@ -864,27 +950,22 @@ def answer_quiz(session_id, user_input):
     if not st["active"]:
         return "No active quiz."
     p = user_input.strip().upper()
-
-    # Special commands
     if p in ["QUIT", "STOP", "EXIT"]:
         s, t = st["score"], st["current_index"]
         st["active"] = False
-        return f"## ⏹️ Quiz stopped\n\n**Score:** {s}/{t}\n**Streak:** 🔥 {st.get('max_streak', 0)}"
-
+        return f"## ⏹️ Quiz stopped\n\n**Score:** {s}/{t}"
     if p == "HINT":
         if st.get("hint_used"):
-            return "Hint already used! Choose A/B/C/D."
+            return "Hint already used!"
         if not st.get("hint_available", 1):
             return "Hints not available for this difficulty."
         cur = st["questions"][st["current_index"]]
         correct = str(cur.get("answer", "")).strip().upper()[:1]
         wrongs = [l for l in ["A", "B", "C", "D"] if l != correct]
         _random.shuffle(wrongs)
-        removed = wrongs[:2]
         st["hint_used"] = True
-        return (f"💡 Hint: **{removed[0]}** and **{removed[1]}** are wrong.\n\n"
+        return (f"💡 Hint: **{wrongs[0]}** and **{wrongs[1]}** are wrong.\n\n"
                 f"{_format_quiz_question(session_id, st['current_index'])}")
-
     if p == "SKIP":
         cur = st["questions"][st["current_index"]]
         correct = str(cur.get("answer", "")).strip().upper()[:1]
@@ -901,18 +982,14 @@ def answer_quiz(session_id, user_input):
         st["hint_used"] = False
         st["question_start"] = _time.time()
         return fb + "---\n\n" + _format_quiz_question(session_id, st["current_index"])
-
-    # A/B/C/D
     m = re.search(r"\b([A-D])\b", p)
     letter = m.group(1) if m else (p[0] if p and p[0] in "ABCD" else None)
     if not letter:
         return "Reply with **A/B/C/D** · **hint** · **skip** · **quit**"
-
     cur = st["questions"][st["current_index"]]
     correct = str(cur.get("answer", "")).strip().upper()[:1]
     ok = (letter == correct)
     time_taken = _time.time() - st.get("question_start", _time.time())
-
     if ok:
         st["score"] += 1
         st["correct"] += 1
@@ -929,16 +1006,12 @@ def answer_quiz(session_id, user_input):
         st["wrong"] += 1
         st["streak"] = 0
         fb = f"❌ **Galat.** Correct: **{correct}**\n\n"
-
     if cur.get("explanation"):
         fb += f"💡 _{cur['explanation']}_\n\n"
-
     st["user_answers"].append({"answer": letter, "correct": ok, "time": round(time_taken, 1)})
     st["current_index"] += 1
-
     if st["current_index"] >= len(st["questions"]):
         return fb + "---\n\n" + _finalize_quiz(session_id)
-
     st["time_left"] = DIFFICULTY_PRESETS.get(st["difficulty"], DIFFICULTY_PRESETS["medium"])["time"]
     st["hint_used"] = False
     st["question_start"] = _time.time()
@@ -978,7 +1051,7 @@ def generate_lesson(target_lang, from_lang="en", unit_title="Basics",
     f_name = LANG_NAMES.get(from_lang, from_lang)
     prompt = f"""You are a language teacher creating a lesson for {f_name} speakers learning {t_name}.
 Unit: {unit_title}, Lesson: {lesson_title}, Level: {level}, Exercises: {count}
-Generate JSON with vocab array and exercises array (mix of translate_mcq, fill_blank, match_pairs, listen_type, build_sentence, speak).
+Generate JSON with vocab array and exercises array.
 Return ONLY JSON, no markdown."""
     result = _groq_call(prompt, temp=0.7, timeout=120)
     if not result:
@@ -988,7 +1061,7 @@ Return ONLY JSON, no markdown."""
     if s == -1 or e == -1:
         return {"error": "Bad format"}
     try:
-        return {"ok": True, **_json.loads(result[s:e+1])}
+        return {"ok": True, **_json.loads(_sanitize_json(result[s:e+1]))}
     except Exception as ex:
         return {"error": f"Parse failed: {ex}"}
 
@@ -1007,7 +1080,7 @@ Rules: {count} units, A1→A2→B1, emoji icons."""
     if s == -1 or e == -1:
         return {"error": "Bad format"}
     try:
-        data = _json.loads(result[s:e+1])
+        data = _json.loads(_sanitize_json(result[s:e+1]))
         return {"ok": True, "units": data.get("units", [])}
     except Exception as ex:
         return {"error": f"Parse failed: {ex}"}
@@ -1035,7 +1108,7 @@ Return ONLY JSON: {{"reply": "...", "romanization": "...", "translation": "...",
             raw = _strip_json_fence(raw)
             s, e = raw.find("{"), raw.rfind("}")
             if s >= 0 and e > s:
-                return _json.loads(raw[s:e+1])
+                return _json.loads(_sanitize_json(raw[s:e+1]))
     except Exception as e:
         print(f"[language_chat] {e}", flush=True)
     return {"reply": "...", "translation": "Try again.", "correction": ""}
@@ -1055,7 +1128,7 @@ Text:\n{text[:4000]}"""
     if s == -1 or e == -1:
         return []
     try:
-        return _json.loads(result[s:e+1])[:max_words]
+        return _json.loads(_sanitize_json(result[s:e+1]))[:max_words]
     except Exception:
         return []
 
@@ -1106,7 +1179,7 @@ Return ONLY JSON array: [{{"q": "...", "options": ["A","B","C","D"], "answer": "
     if s == -1 or e == -1:
         return []
     try:
-        arr = _json.loads(result[s:e+1])
+        arr = _json.loads(_sanitize_json(result[s:e+1]))
         cleaned = []
         for q in arr[:count]:
             if not isinstance(q, dict):
@@ -1141,7 +1214,7 @@ ONLY JSON."""
     if s == -1 or e == -1:
         return {"rating": 3, "is_correct": True, "feedback": "OK", "improvement": ""}
     try:
-        return _json.loads(result[s:e+1])
+        return _json.loads(_sanitize_json(result[s:e+1]))
     except Exception:
         return {"rating": 3, "is_correct": True, "feedback": "OK", "improvement": ""}
 
@@ -1180,7 +1253,7 @@ Each formula: {{"name", "plain", "meaning", "units"}}. NO markdown."""
     if s == -1 or e == -1:
         return {"error": "Bad format"}
     try:
-        data = _json.loads(result[s:e+1])
+        data = _json.loads(_sanitize_json(result[s:e+1]))
         md = f"# {data.get('title', subject + ' Formula Sheet')}\n\n"
         for sec in data.get("sections", []):
             md += f"## {sec.get('chapter', '')}\n\n"
@@ -1220,7 +1293,7 @@ Content:\n{source_text[:3000]}"""
     if s == -1 or e == -1:
         return {"error": "Bad format"}
     try:
-        data = _json.loads(result[s:e+1])
+        data = _json.loads(_sanitize_json(result[s:e+1]))
         return {"ok": True, "title": data.get("title", title), "lines": data.get("lines", [])}
     except Exception as ex:
         return {"error": f"Parse failed: {ex}"}
@@ -1281,7 +1354,7 @@ Return ONLY JSON array: [{{"q": "...", "answer": "...", "explanation": "...", "m
     if s == -1 or e == -1:
         return {"error": "Bad format"}
     try:
-        arr = _json.loads(result[s:e+1])
+        arr = _json.loads(_sanitize_json(result[s:e+1]))
         return {"ok": True, "topic": topic, "qtype": qtype, "questions": arr[:count]}
     except Exception as ex:
         return {"error": f"Parse failed: {ex}"}
@@ -1301,7 +1374,7 @@ Each question: subject, q, options, answer, explanation, marks, negative."""
     if s == -1 or e == -1:
         return {"error": "Bad format"}
     try:
-        return {"ok": True, **_json.loads(result[s:e+1])}
+        return {"ok": True, **_json.loads(_sanitize_json(result[s:e+1]))}
     except Exception as ex:
         return {"error": f"Parse failed: {ex}"}
 
@@ -1330,7 +1403,6 @@ def novex(user_input, user=None, settings=None, personas=None, memory=None, sess
         return _GREETINGS[p]
     raw_lower = user_input.lower().strip()
 
-    # ---------- QUIZ ----------
     if raw_lower in ("/quiz", "quiz"):
         if _quiz_state[sid]["active"]:
             return answer_quiz(sid, user_input)
@@ -1343,7 +1415,6 @@ def novex(user_input, user=None, settings=None, personas=None, memory=None, sess
             return f"## ⏹️ Quiz stopped\n\n**Score:** {s}/{t}"
         return "Koi quiz active nahi."
 
-    # "quiz on <topic> [difficulty]" or "<topic> quiz"
     quiz_topic = None
     quiz_diff = "medium"
     for pat in [r"^/quiz\s+(.+)$", r"^quiz\s+on\s+(.+)$",
@@ -1353,7 +1424,6 @@ def novex(user_input, user=None, settings=None, personas=None, memory=None, sess
             topic = re.sub(r"\s+", " ", re.sub(r"\bquiz\b", "",
                            re.sub(r"^/+", "", m.group(1).strip())).strip()).strip()
             if topic and len(topic) >= 2:
-                # Check for difficulty word
                 for diff in ["easy", "medium", "hard", "expert"]:
                     if topic.endswith(" " + diff):
                         quiz_diff = diff
@@ -1367,11 +1437,9 @@ def novex(user_input, user=None, settings=None, personas=None, memory=None, sess
     if _quiz_state[sid].get("active"):
         return answer_quiz(sid, user_input)
 
-    # ---------- MODEL ----------
     if p.startswith("model "):
         return set_model(user_input[6:].strip())
 
-    # ---------- TRANSLATE ----------
     if p.startswith(("translate ", "anuvad ", "अनुवाद ")):
         parts = user_input.split(":", 1)
         if len(parts) == 2:
@@ -1383,7 +1451,6 @@ def novex(user_input, user=None, settings=None, personas=None, memory=None, sess
             return f"⚠️ {result.get('error')}"
         return "**Format:** `translate to hindi: <text>`"
 
-    # ---------- OLLAMA ----------
     if _ACTIVE_MODEL.startswith("ollama:"):
         if any(w in p for w in ["time", "samay", "baj", "waqt"]):
             return get_time()
@@ -1399,7 +1466,6 @@ def novex(user_input, user=None, settings=None, personas=None, memory=None, sess
             return calculate(user_input.split(" ", 1)[1])
         return ask_ollama(user_input, model=_ACTIVE_MODEL.replace("ollama:", ""), session_id=sid)
 
-    # ---------- MODE ----------
     if p.startswith("mode "):
         mode = p.replace("mode", "").strip()
         if mode in PERSONAS or (personas and mode in personas):
@@ -1408,21 +1474,18 @@ def novex(user_input, user=None, settings=None, personas=None, memory=None, sess
             return f"✓ Mode: **{name}**"
         return f"Available: **{', '.join(PERSONAS.keys())}**"
 
-    # ---------- SAVE CODE ----------
     if p in ("save code", "code save karo"):
         if not _last_code[sid]:
             return "No code yet."
         return save_code(_last_code[sid],
                         f"novex_code_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.py")
 
-    # ---------- PDF ----------
     if p.startswith("pdf "):
         parts = user_input.split(":", 1)
         if len(parts) == 2:
             return ask_about_pdf(parts[0].replace("pdf", "").strip(), parts[1].strip())
         return "**Format:** `pdf <path> : <question>`"
 
-    # ---------- NOTES ----------
     if p.startswith("note save ") or p.startswith("note likho "):
         return save_note(user_input.split(" ", 2)[-1])
     if p in ("notes", "note dikhao", "mere notes", "show notes"):
@@ -1430,29 +1493,24 @@ def novex(user_input, user=None, settings=None, personas=None, memory=None, sess
     if p in ("notes clear", "note delete", "saare notes delete"):
         return clear_notes()
 
-    # ---------- CALCULATE ----------
     if p.startswith("calculate ") or p.startswith("calc "):
         return calculate(user_input.split(" ", 1)[1])
 
-    # ---------- WIKI ----------
     if p.startswith(("wiki ", "wikipedia ")):
         return get_wiki(user_input.split(" ", 1)[1].strip())
 
-    # ---------- DATE / TIME ----------
     if any(w in p for w in ["kal", "parso", "aaj"]) and \
        any(w in p for w in ["date", "din", "day", "tarikh"]):
         return get_day_info(p)
-    if any(w in p for w in ["time", "samay", "baj", "waqt"]):
+    if any(w in p for w in ["time", "samay", "baj", "waqt", "clock", "ghadi"]):
         return get_time()
 
-    # ---------- WEATHER ----------
     if any(w in p for w in ["weather", "mausam", "temperature", "garmi", "sardi",
                              "barish", "rain", "forecast"]):
         city = next((c for c in ["mumbai", "delhi", "bangalore", "kolkata",
                                  "chennai", "pune", "hyderabad"] if c in p), "Delhi")
         return get_weather(city)
 
-    # ---------- NEWS ----------
     if p.startswith(("news ", "khabar ", "khabrein ")):
         topic = re.sub(r"^(news|khabar|khabrein)\s+", "", user_input,
                        flags=re.IGNORECASE).strip()
@@ -1460,42 +1518,23 @@ def novex(user_input, user=None, settings=None, personas=None, memory=None, sess
     if any(w in p for w in ["news", "khabar", "headline"]):
         return get_news()
 
-    # ---------- SEARCH ----------
     if p.startswith(("search ", "google ", "dhundo ", "khojo ", "dhoondo ")):
         q = re.sub(r"^(search|google|dhundo|khojo|dhoondo)\s+", "", user_input,
                    flags=re.IGNORECASE).strip()
         return web_search(q)
 
-    # ---------- REMINDER ----------
     rem = parse_reminder(user_input)
     if rem:
         return f"⏰ Reminder set: **{rem['text']}** @ {rem['when']}"
 
-    # ---------- DEFAULT ----------
     return ask_groq(user_input,
                     custom_instructions=(settings or {}).get("custom_instructions", ""),
                     user_personas=personas, memory=memory, session_id=sid)
 
 
-# ---------- STUBS (kept for compatibility) ----------
-def get_time():
-    now = datetime.datetime.now()
-    days_hi = ["Somvar", "Mangalvar", "Budhvar", "Guruvar", "Shukravar", "Shanivar", "Ravivar"]
-    return f"Abhi **{now.strftime('%I:%M %p')}**, {days_hi[now.weekday()]}, {now.day}/{now.month}/{now.year} hai. ⏰"
-
-
-def get_day_info(query):
-    today = datetime.date.today()
-    fmt = lambda d: f"{d.strftime('%A')}, {d.day}/{d.month}/{d.year}"
-    if "parso" in query:
-        return f"Parso: **{fmt(today + datetime.timedelta(days=2))}**"
-    if "kal" in query:
-        return f"Kal: **{fmt(today + datetime.timedelta(days=1))}**"
-    if "aaj" in query:
-        return f"Aaj: **{fmt(today)}**"
-    return fmt(today)
-
-
+# ============================================================
+# HELPERS
+# ============================================================
 def get_weather(city="Delhi"):
     try:
         geo = requests.get(
@@ -1531,8 +1570,9 @@ def get_wiki(topic):
         if res.status_code == 200:
             ext = res.json().get("extract", "")
             if ext:
+                url = f"https://en.wikipedia.org/wiki/{quote(title)}"
                 return (f"**{title}**\n\n{ext}\n\n"
-                        f"🔗 [Wikipedia](https://en.wikipedia.org/wiki/{quote(title)})")
+                        f"🔗 [Read full article on Wikipedia]({url})")
         return "No summary."
     except Exception as e:
         return f"Wiki error: {e}"
@@ -1552,7 +1592,7 @@ def calculate(expr):
 def save_note(text):
     try:
         with open("notes.txt", "a", encoding="utf-8") as f:
-            f.write(f"{datetime.datetime.now().strftime('%d-%m-%Y %H:%M')} — {text}\n")
+            f.write(f"{datetime.datetime.now(IST).strftime('%d-%m-%Y %H:%M')} — {text}\n")
         return f"✓ Note saved: **{text}**"
     except Exception as e:
         return f"Error: {e}"
@@ -1762,7 +1802,7 @@ def get_active_model():
 __all__ = [
     "novex", "ask_groq", "ask_groq_stream", "ask_ollama",
     "set_model", "get_active_model", "is_quiz_active",
-    "build_system_prompt", "PERSONAS", "DEEP_EXPLAIN_SYSTEM",
+    "build_system_prompt", "PERSONAS", "DEEP_EXPLAIN_SYSTEM", "DEFAULT_SYSTEM",
     "extract_facts", "generate_flashcards", "generate_document",
     "generate_quiz_json", "translate_text", "parse_reminder",
     "get_time", "get_day_info", "get_weather", "get_news", "get_wiki",
