@@ -1,260 +1,194 @@
 /* ============================================================
-   NOVEX AI — Realistic Themes Pack
-   Add <link rel="stylesheet" href="/themes.css"> to index.html
+   NOVEX AI — REALISTIC THEMES v2 (Real textures via SVG)
    ============================================================ */
 
-/* ========== REALISTIC: PAPER (Aged paper / book) ========== */
+/* ========== PAPER — Real paper grain ========== */
 [data-theme="paper"]{
   --bg-0:#f4ecd8;--bg-1:#f4ecd8;--bg-2:#ede4cc;--sur:#faf3e0;--sur2:#f0e8d0;
   --sur3:#e5dcc0;--hov:rgba(139,90,43,.08);--hov2:rgba(139,90,43,.15);
   --bor:rgba(139,90,43,.2);--bor2:rgba(139,90,43,.35);
   --txt:#3d2b1f;--txt2:#5c4a37;--dim:#8b7355;--mut:#a89078;
-  --cy:#8b5a2b;--cy2:#a0522d;--blu:#5f7161;--grn:#6b8e23;
-  --red:#a0522d;--amb:#b8860b;--gl1:rgba(139,90,43,.3);--gl2:rgba(139,90,43,.15);
+  --cy:#8b5a2b;--cy2:#a0522d;--grn:#6b8e23;--red:#a0522d;--amb:#b8860b;
+  --gl1:rgba(139,90,43,.3);--gl2:rgba(139,90,43,.15);
 }
 [data-theme="paper"] body{
-  background:#f4ecd8;
+  background-color:#f4ecd8;
   background-image:
-    radial-gradient(ellipse at 20% 30%,rgba(139,90,43,.06) 0%,transparent 50%),
-    radial-gradient(ellipse at 80% 70%,rgba(160,82,45,.05) 0%,transparent 50%),
-    repeating-linear-gradient(0deg,transparent 0,transparent 24px,rgba(139,90,43,.04) 24px,rgba(139,90,43,.04) 25px);
-}
-[data-theme="paper"] .sidebar{background:#ede4cc;border-right-color:rgba(139,90,43,.25)}
-
-/* ========== REALISTIC: GLASS (Frosted glass) ========== */
-[data-theme="glass"]{
-  --bg-0:#0f1a2e;--bg-1:#0f1a2e;--bg-2:#0a1220;--sur:rgba(255,255,255,.06);
-  --sur2:rgba(255,255,255,.1);--sur3:rgba(255,255,255,.14);
-  --hov:rgba(255,255,255,.08);--hov2:rgba(255,255,255,.14);
-  --bor:rgba(255,255,255,.12);--bor2:rgba(255,255,255,.22);
-  --txt:#f0f6ff;--txt2:#b8c5dd;--dim:#8a9ab8;--mut:#5a6a88;
-  --cy:#7dd3fc;--cy2:#a5e4ff;--blu:#818cf8;--grn:#6ee7b7;
-  --red:#fca5a5;--amb:#fcd34d;--gl1:rgba(125,211,252,.4);--gl2:rgba(129,140,248,.25);
-}
-[data-theme="glass"] body{
-  background:linear-gradient(135deg,#0f1a2e 0%,#1a2842 50%,#0f1a2e 100%);
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='paper'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='4' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0.55 0 0 0 0 0.42 0 0 0 0 0.28 0 0 0 0.12 0'/%3E%3C/filter%3E%3Crect width='200' height='200' filter='url(%23paper)'/%3E%3C/svg%3E"),
+    repeating-linear-gradient(0deg,transparent 0,transparent 27px,rgba(139,90,43,.06) 27px,rgba(139,90,43,.06) 28px);
   background-attachment:fixed;
 }
-[data-theme="glass"] body::before{
-  content:'';position:fixed;inset:0;pointer-events:none;z-index:-1;
-  background-image:
-    radial-gradient(circle at 10% 20%,rgba(125,211,252,.25) 0%,transparent 40%),
-    radial-gradient(circle at 90% 80%,rgba(129,140,248,.2) 0%,transparent 40%),
-    radial-gradient(circle at 50% 50%,rgba(110,231,183,.1) 0%,transparent 50%);
-}
-[data-theme="glass"] .sidebar,
-[data-theme="glass"] .topbar,
-[data-theme="glass"] .settings-modal,
-[data-theme="glass"] .auth-card,
-[data-theme="glass"] .composer-box{
-  backdrop-filter:blur(16px) saturate(180%);
-  -webkit-backdrop-filter:blur(16px) saturate(180%);
-  background:rgba(255,255,255,.06)!important;
-  border:1px solid rgba(255,255,255,.14)!important;
-}
+[data-theme="paper"] .msg-content,
+[data-theme="paper"] .sidebar{font-family:'Georgia','Times New Roman',serif}
 
-/* ========== REALISTIC: NEON CITY (Cyberpunk night) ========== */
-[data-theme="neoncity"]{
-  --bg-0:#0a0a0f;--bg-1:#0a0a0f;--bg-2:#050508;--sur:#12121a;
-  --sur2:#1a1a26;--sur3:#24242f;
-  --hov:rgba(255,0,128,.08);--hov2:rgba(255,0,128,.16);
-  --bor:rgba(255,0,128,.25);--bor2:rgba(0,255,255,.4);
-  --txt:#f0e6ff;--txt2:#c8b8ff;--dim:#8a7aa8;--mut:#5a4a78;
-  --cy:#ff0080;--cy2:#ff44aa;--blu:#00ffff;--grn:#00ff88;
-  --red:#ff3366;--amb:#ffaa00;--gl1:rgba(255,0,128,.6);--gl2:rgba(0,255,255,.4);
-}
-[data-theme="neoncity"] body{
-  background:#0a0a0f;
-  background-image:
-    linear-gradient(rgba(255,0,128,.04) 1px,transparent 1px),
-    linear-gradient(90deg,rgba(0,255,255,.04) 1px,transparent 1px),
-    radial-gradient(ellipse at 15% 20%,rgba(255,0,128,.2) 0%,transparent 45%),
-    radial-gradient(ellipse at 85% 80%,rgba(0,255,255,.18) 0%,transparent 45%);
-  background-size:50px 50px,50px 50px,auto,auto;
-}
-[data-theme="neoncity"] .brand-mark,
-[data-theme="neoncity"] .send-btn.active{
-  filter:drop-shadow(0 0 12px currentColor);
-}
-[data-theme="neoncity"] .msg-content code{
-  text-shadow:0 0 8px rgba(0,255,255,.5);
-}
-
-/* ========== REALISTIC: LEATHER (Dark textured) ========== */
-[data-theme="leather"]{
-  --bg-0:#1a0f0a;--bg-1:#1a0f0a;--bg-2:#120804;--sur:#2a1810;
-  --sur2:#3a2218;--sur3:#4a2c20;
-  --hov:rgba(200,150,100,.08);--hov2:rgba(200,150,100,.16);
-  --bor:rgba(200,150,100,.2);--bor2:rgba(200,150,100,.35);
-  --txt:#f0e0d0;--txt2:#c8a880;--dim:#a07850;--mut:#705030;
-  --cy:#c8964a;--cy2:#e0b060;--blu:#8b6f47;--grn:#7a8b47;
-  --red:#a0522d;--amb:#b8860b;--gl1:rgba(200,150,74,.4);--gl2:rgba(139,111,71,.3);
-}
-[data-theme="leather"] body{
-  background:#1a0f0a;
-  background-image:
-    radial-gradient(ellipse at 30% 40%,rgba(200,150,100,.08) 0%,transparent 50%),
-    radial-gradient(ellipse at 70% 60%,rgba(139,111,71,.06) 0%,transparent 50%),
-    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='100' height='100'%3E%3Cfilter id='n'%3E%3CfeTurbulence baseFrequency='0.9' numOctaves='3'/%3E%3C/filter%3E%3Crect width='100' height='100' filter='url(%23n)' opacity='0.06'/%3E%3C/svg%3E");
-}
-
-/* ========== REALISTIC: MARBLE (Premium white) ========== */
+/* ========== MARBLE — Real marble veins ========== */
 [data-theme="marble"]{
-  --bg-0:#f8f8f5;--bg-1:#f8f8f5;--bg-2:#f0f0ec;--sur:#ffffff;
-  --sur2:#f5f5f0;--sur3:#e8e8e0;
-  --hov:rgba(80,80,120,.06);--hov2:rgba(80,80,120,.12);
+  --bg-0:#f8f8f5;--bg-1:#f8f8f5;--bg-2:#f0f0ec;--sur:#ffffff;--sur2:#f5f5f0;
+  --sur3:#e8e8e0;--hov:rgba(80,80,120,.06);--hov2:rgba(80,80,120,.12);
   --bor:rgba(80,80,120,.12);--bor2:rgba(80,80,120,.22);
   --txt:#1a1a24;--txt2:#404055;--dim:#707088;--mut:#a0a0b8;
-  --cy:#5a6acf;--cy2:#7a8ae0;--blu:#4a5ab8;--grn:#5a9a6a;
-  --red:#c04a5a;--amb:#c8a040;--gl1:rgba(90,106,207,.3);--gl2:rgba(122,138,224,.15);
+  --cy:#5a6acf;--cy2:#7a8ae0;--grn:#5a9a6a;--red:#c04a5a;--amb:#c8a040;
+  --gl1:rgba(90,106,207,.3);--gl2:rgba(122,138,224,.15);
 }
 [data-theme="marble"] body{
-  background:#f8f8f5;
+  background-color:#f8f8f5;
   background-image:
-    radial-gradient(ellipse at 20% 30%,rgba(90,106,207,.04) 0%,transparent 50%),
-    radial-gradient(ellipse at 80% 70%,rgba(122,138,224,.03) 0%,transparent 50%),
-    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='400' height='400'%3E%3Cpath d='M0,200 Q100,150 200,200 T400,200' stroke='rgba(90,106,207,0.05)' fill='none' stroke-width='40'/%3E%3Cpath d='M0,300 Q150,250 300,300 T600,280' stroke='rgba(122,138,224,0.04)' fill='none' stroke-width='30'/%3E%3C/svg%3E");
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='800' height='800'%3E%3Cfilter id='marble'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.012' numOctaves='6'/%3E%3CfeDisplacementMap in='SourceGraphic' scale='180'/%3E%3CfeColorMatrix values='0 0 0 0 0.35 0 0 0 0 0.4 0 0 0 0 0.55 0 0 0 0.22 0'/%3E%3C/filter%3E%3Crect width='800' height='800' filter='url(%23marble)'/%3E%3C/svg%3E");
   background-attachment:fixed;
 }
 
-/* ========== REALISTIC: FOREST MIST ========== */
-[data-theme="forestmist"]{
-  --bg-0:#0d1410;--bg-1:#0d1410;--bg-2:#080f0a;--sur:#142018;
-  --sur2:#1c2c22;--sur3:#25392d;
-  --hov:rgba(120,180,120,.08);--hov2:rgba(120,180,120,.16);
-  --bor:rgba(120,180,120,.18);--bor2:rgba(120,180,120,.32);
-  --txt:#e0f0e0;--txt2:#a8c8a8;--dim:#789878;--mut:#4a6a4a;
-  --cy:#6ba86b;--cy2:#8ac88a;--blu:#5a8a8a;--grn:#7ab87a;
-  --red:#a85a5a;--amb:#c8a86a;--gl1:rgba(107,168,107,.4);--gl2:rgba(90,138,138,.25);
+/* ========== LEATHER — Real leather texture ========== */
+[data-theme="leather"]{
+  --bg-0:#1a0f0a;--bg-1:#1a0f0a;--bg-2:#120804;--sur:#2a1810;--sur2:#3a2218;
+  --sur3:#4a2c20;--hov:rgba(200,150,100,.08);--hov2:rgba(200,150,100,.16);
+  --bor:rgba(200,150,100,.2);--bor2:rgba(200,150,100,.35);
+  --txt:#f0e0d0;--txt2:#c8a880;--dim:#a07850;--mut:#705030;
+  --cy:#c8964a;--cy2:#e0b060;--grn:#7a8b47;--red:#a0522d;--amb:#b8860b;
+  --gl1:rgba(200,150,74,.4);--gl2:rgba(139,111,71,.3);
 }
-[data-theme="forestmist"] body{
-  background:#0d1410;
+[data-theme="leather"] body{
+  background-color:#1a0f0a;
   background-image:
-    radial-gradient(ellipse at 30% 20%,rgba(120,180,120,.15) 0%,transparent 50%),
-    radial-gradient(ellipse at 70% 80%,rgba(90,138,138,.12) 0%,transparent 50%),
-    radial-gradient(ellipse at 50% 50%,rgba(107,168,107,.08) 0%,transparent 60%);
-}
-
-/* ========== REALISTIC: OCEAN DEEP ========== */
-[data-theme="oceandeep"]{
-  --bg-0:#04141f;--bg-1:#04141f;--bg-2:#020a12;--sur:#0a2030;
-  --sur2:#103040;--sur3:#184050;
-  --hov:rgba(80,180,220,.08);--hov2:rgba(80,180,220,.16);
-  --bor:rgba(80,180,220,.18);--bor2:rgba(80,180,220,.32);
-  --txt:#d0eaf5;--txt2:#90c0d8;--dim:#6088a0;--mut:#3a5870;
-  --cy:#40c0e0;--cy2:#60e0f5;--blu:#3090c0;--grn:#40a080;
-  --red:#c06060;--amb:#d0a040;--gl1:rgba(64,192,224,.45);--gl2:rgba(48,144,192,.3);
-}
-[data-theme="oceandeep"] body{
-  background:linear-gradient(180deg,#04141f 0%,#082030 40%,#04141f 100%);
-  background-attachment:fixed;
-}
-[data-theme="oceandeep"] body::before{
-  content:'';position:fixed;inset:0;pointer-events:none;z-index:-1;
-  background-image:
-    radial-gradient(circle at 20% 30%,rgba(64,192,224,.15) 0%,transparent 40%),
-    radial-gradient(circle at 80% 70%,rgba(48,144,192,.12) 0%,transparent 40%);
-}
-
-/* ========== REALISTIC: SUNSET BEACH ========== */
-[data-theme="sunsetbeach"]{
-  --bg-0:#2a1520;--bg-1:#2a1520;--bg-2:#1a0d15;--sur:#3a2030;
-  --sur2:#4a2a40;--sur3:#5a3550;
-  --hov:rgba(255,160,120,.1);--hov2:rgba(255,160,120,.18);
-  --bor:rgba(255,160,120,.22);--bor2:rgba(255,160,120,.38);
-  --txt:#ffe8d8;--txt2:#ffc8a8;--dim:#d09070;--mut:#906050;
-  --cy:#ff9060;--cy2:#ffb080;--blu:#c060a0;--grn:#80a060;
-  --red:#e05050;--amb:#ffb040;--gl1:rgba(255,144,96,.5);--gl2:rgba(192,96,160,.3);
-}
-[data-theme="sunsetbeach"] body{
-  background:linear-gradient(180deg,#2a1520 0%,#3a1525 30%,#5a2030 60%,#2a1520 100%);
-  background-attachment:fixed;
-}
-[data-theme="sunsetbeach"] body::before{
-  content:'';position:fixed;inset:0;pointer-events:none;z-index:-1;
-  background-image:
-    radial-gradient(circle at 30% 40%,rgba(255,144,96,.25) 0%,transparent 40%),
-    radial-gradient(circle at 70% 60%,rgba(192,96,160,.2) 0%,transparent 40%);
-}
-
-/* ========== REALISTIC: MIDNIGHT SKY (Stars) ========== */
-[data-theme="midnightsky"]{
-  --bg-0:#050816;--bg-1:#050816;--bg-2:#020410;--sur:#0a1030;
-  --sur2:#121840;--sur3:#1c2450;
-  --hov:rgba(120,140,220,.08);--hov2:rgba(120,140,220,.16);
-  --bor:rgba(120,140,220,.18);--bor2:rgba(120,140,220,.32);
-  --txt:#e0e8ff;--txt2:#a8b8e8;--dim:#7888b8;--mut:#485878;
-  --cy:#8090e0;--cy2:#a0b0f0;--blu:#6070d0;--grn:#70a0c0;
-  --red:#c08080;--amb:#d0c080;--gl1:rgba(128,144,224,.5);--gl2:rgba(96,112,208,.3);
-}
-[data-theme="midnightsky"] body{
-  background:#050816;
-  background-image:
-    radial-gradient(1px 1px at 20% 30%,#fff 0%,transparent 100%),
-    radial-gradient(1px 1px at 60% 70%,#fff 0%,transparent 100%),
-    radial-gradient(1px 1px at 80% 20%,#fff 0%,transparent 100%),
-    radial-gradient(1px 1px at 40% 80%,#fff 0%,transparent 100%),
-    radial-gradient(1px 1px at 15% 60%,#fff 0%,transparent 100%),
-    radial-gradient(1px 1px at 90% 50%,#fff 0%,transparent 100%),
-    radial-gradient(2px 2px at 30% 10%,#fff 0%,transparent 100%),
-    radial-gradient(2px 2px at 70% 90%,#fff 0%,transparent 100%),
-    radial-gradient(ellipse at 50% 40%,rgba(128,144,224,.12) 0%,transparent 60%);
-  background-size:200px 200px,250px 250px,300px 300px,180px 180px,220px 220px,280px 280px,400px 400px,500px 500px,auto;
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='300' height='300'%3E%3Cfilter id='leather'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='1.2' numOctaves='4' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0.6 0 0 0 0 0.4 0 0 0 0 0.25 0 0 0 0.15 0'/%3E%3C/filter%3E%3Crect width='300' height='300' filter='url(%23leather)'/%3E%3C/svg%3E"),
+    radial-gradient(ellipse at 30% 40%,rgba(200,150,100,.1) 0%,transparent 60%);
   background-attachment:fixed;
 }
 
-/* ========== REALISTIC: JAPANESE GARDEN ========== */
-[data-theme="japanesegarden"]{
-  --bg-0:#1a1f1a;--bg-1:#1a1f1a;--bg-2:#12160f;--sur:#242a20;
-  --sur2:#2e3828;--sur3:#3a4832;
-  --hov:rgba(180,140,100,.08);--hov2:rgba(180,140,100,.16);
-  --bor:rgba(180,140,100,.2);--bor2:rgba(180,140,100,.35);
-  --txt:#e8e0d0;--txt2:#c0b090;--dim:#908060;--mut:#605040;
-  --cy:#c8964a;--cy2:#e0b870;--blu:#7a9a8a;--grn:#7a9a4a;
-  --red:#a05a4a;--amb:#c8a050;--gl1:rgba(200,150,74,.4);--gl2:rgba(122,154,138,.3);
+/* ========== WOOD — Real wood grain ========== */
+[data-theme="wood"]{
+  --bg-0:#2a1810;--bg-1:#2a1810;--bg-2:#1a0e08;--sur:#3a2418;--sur2:#4a3020;
+  --sur3:#5a3a28;--hov:rgba(200,150,90,.1);--hov2:rgba(200,150,90,.2);
+  --bor:rgba(200,150,90,.25);--bor2:rgba(200,150,90,.45);
+  --txt:#f0dcc0;--txt2:#d4b890;--dim:#a08060;--mut:#705840;
+  --cy:#c89050;--cy2:#e0b070;--grn:#90a060;--red:#b05040;--amb:#c8a040;
+  --gl1:rgba(200,144,80,.4);--gl2:rgba(224,176,112,.25);
 }
-[data-theme="japanesegarden"] body{
-  background:#1a1f1a;
+[data-theme="wood"] body{
+  background-color:#2a1810;
   background-image:
-    radial-gradient(circle at 20% 80%,rgba(200,150,74,.15) 0%,transparent 35%),
-    radial-gradient(circle at 80% 20%,rgba(122,154,138,.12) 0%,transparent 35%),
-    radial-gradient(ellipse at 50% 50%,rgba(122,154,74,.08) 0%,transparent 60%);
-}
-
-/* ========== REALISTIC: GOLDEN HOUR ========== */
-[data-theme="goldenhour"]{
-  --bg-0:#2a2015;--bg-1:#2a2015;--bg-2:#1a140a;--sur:#3a2c1a;
-  --sur2:#4a3822;--sur3:#5a482c;
-  --hov:rgba(255,200,120,.1);--hov2:rgba(255,200,120,.18);
-  --bor:rgba(255,200,120,.22);--bor2:rgba(255,200,120,.4);
-  --txt:#fff0d0;--txt2:#e0c090;--dim:#b09060;--mut:#806840;
-  --cy:#e0a040;--cy2:#ffc060;--blu:#c08040;--grn:#a0a040;
-  --red:#c06040;--amb:#e0b050;--gl1:rgba(224,160,64,.55);--gl2:rgba(192,128,64,.35);
-}
-[data-theme="goldenhour"] body{
-  background:linear-gradient(135deg,#2a2015 0%,#3a2818 50%,#2a2015 100%);
+    repeating-linear-gradient(88deg,
+      rgba(0,0,0,.15) 0px,
+      rgba(200,150,90,.05) 3px,
+      rgba(0,0,0,.1) 6px,
+      rgba(200,150,90,.03) 10px,
+      transparent 15px,
+      rgba(0,0,0,.08) 20px),
+    radial-gradient(ellipse at 50% 50%,rgba(200,144,80,.15) 0%,transparent 70%);
   background-attachment:fixed;
 }
-[data-theme="goldenhour"] body::before{
-  content:'';position:fixed;inset:0;pointer-events:none;z-index:-1;
+
+/* ========== CONCRETE — Real concrete texture ========== */
+[data-theme="concrete"]{
+  --bg-0:#1a1a1a;--bg-1:#1a1a1a;--bg-2:#111;--sur:#252525;--sur2:#2f2f2f;
+  --sur3:#3a3a3a;--hov:rgba(255,255,255,.05);--hov2:rgba(255,255,255,.1);
+  --bor:rgba(255,255,255,.1);--bor2:rgba(255,255,255,.2);
+  --txt:#e8e8e8;--txt2:#b8b8b8;--dim:#888;--mut:#606060;
+  --cy:#888;--cy2:#aaa;--grn:#10b981;--red:#ef4444;--amb:#f59e0b;
+  --gl1:rgba(136,136,136,.3);--gl2:rgba(170,170,170,.15);
+}
+[data-theme="concrete"] body{
+  background-color:#1a1a1a;
   background-image:
-    radial-gradient(circle at 25% 25%,rgba(255,200,120,.2) 0%,transparent 45%),
-    radial-gradient(circle at 75% 75%,rgba(224,160,64,.15) 0%,transparent 45%);
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='400' height='400'%3E%3Cfilter id='conc'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='5'/%3E%3CfeColorMatrix values='0 0 0 0 0.5 0 0 0 0 0.5 0 0 0 0 0.5 0 0 0 0.12 0'/%3E%3C/filter%3E%3Crect width='400' height='400' filter='url(%23conc)'/%3E%3C/svg%3E");
+  background-attachment:fixed;
 }
 
-/* ========== COMMON: Apply realistic themes to core UI ========== */
+/* ========== FABRIC — Real cloth weave ========== */
+[data-theme="fabric"]{
+  --bg-0:#1e2430;--bg-1:#1e2430;--bg-2:#141a24;--sur:#283040;--sur2:#333d50;
+  --sur3:#404a60;--hov:rgba(150,180,220,.08);--hov2:rgba(150,180,220,.15);
+  --bor:rgba(150,180,220,.15);--bor2:rgba(150,180,220,.3);
+  --txt:#dce4f0;--txt2:#a8b4c8;--dim:#7080a0;--mut:#4a5568;
+  --cy:#5a7fb8;--cy2:#7a9fd0;--grn:#5a9a80;--red:#c06060;--amb:#c8a040;
+  --gl1:rgba(90,127,184,.4);--gl2:rgba(122,159,208,.25);
+}
+[data-theme="fabric"] body{
+  background-color:#1e2430;
+  background-image:
+    repeating-linear-gradient(0deg,
+      rgba(150,180,220,.06) 0px,rgba(150,180,220,.06) 1px,transparent 1px,transparent 4px),
+    repeating-linear-gradient(90deg,
+      rgba(150,180,220,.06) 0px,rgba(150,180,220,.06) 1px,transparent 1px,transparent 4px),
+    radial-gradient(ellipse at 50% 50%,rgba(90,127,184,.15) 0%,transparent 70%);
+  background-attachment:fixed;
+}
+
+/* ========== RUST — Aged metal ========== */
+[data-theme="rust"]{
+  --bg-0:#1a0e08;--bg-1:#1a0e08;--bg-2:#100804;--sur:#2a180e;--sur2:#3a2214;
+  --sur3:#4a2c1a;--hov:rgba(200,90,30,.1);--hov2:rgba(200,90,30,.2);
+  --bor:rgba(200,90,30,.25);--bor2:rgba(200,90,30,.45);
+  --txt:#f0d0b0;--txt2:#c8a080;--dim:#a06040;--mut:#703820;
+  --cy:#c85a1e;--cy2:#e07a3e;--grn:#708040;--red:#b03020;--amb:#c88020;
+  --gl1:rgba(200,90,30,.5);--gl2:rgba(224,122,62,.3);
+}
+[data-theme="rust"] body{
+  background-color:#1a0e08;
+  background-image:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='400' height='400'%3E%3Cfilter id='rust'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.5' numOctaves='5'/%3E%3CfeColorMatrix values='0 0 0 0 0.7 0 0 0 0 0.35 0 0 0 0 0.12 0 0 0 0.18 0'/%3E%3C/filter%3E%3Crect width='400' height='400' filter='url(%23rust)'/%3E%3C/svg%3E"),
+    radial-gradient(ellipse at 30% 30%,rgba(200,90,30,.15) 0%,transparent 60%);
+  background-attachment:fixed;
+}
+
+/* ========== LINEN — Light cloth ========== */
+[data-theme="linen"]{
+  --bg-0:#f5f0e5;--bg-1:#f5f0e5;--bg-2:#ebe4d5;--sur:#faf5ea;--sur2:#f0eade;
+  --sur3:#e0d8c8;--hov:rgba(120,90,50,.06);--hov2:rgba(120,90,50,.12);
+  --bor:rgba(120,90,50,.15);--bor2:rgba(120,90,50,.28);
+  --txt:#3a2a1a;--txt2:#5a4030;--dim:#8a7050;--mut:#b09878;
+  --cy:#8a6a3a;--cy2:#a08450;--grn:#708040;--red:#b05040;--amb:#b08020;
+  --gl1:rgba(138,106,58,.3);--gl2:rgba(160,132,80,.2);
+}
+[data-theme="linen"] body{
+  background-color:#f5f0e5;
+  background-image:
+    repeating-linear-gradient(0deg,
+      rgba(120,90,50,.05) 0px,rgba(120,90,50,.05) 1px,transparent 1px,transparent 3px),
+    repeating-linear-gradient(90deg,
+      rgba(120,90,50,.05) 0px,rgba(120,90,50,.05) 1px,transparent 1px,transparent 3px);
+  background-attachment:fixed;
+}
+
+/* ========== STONE — Grey natural stone ========== */
+[data-theme="stone"]{
+  --bg-0:#2a2a2a;--bg-1:#2a2a2a;--bg-2:#1e1e1e;--sur:#353535;--sur2:#404040;
+  --sur3:#4d4d4d;--hov:rgba(200,200,200,.06);--hov2:rgba(200,200,200,.12);
+  --bor:rgba(200,200,200,.15);--bor2:rgba(200,200,200,.28);
+  --txt:#e0e0e0;--txt2:#b0b0b0;--dim:#808080;--mut:#5a5a5a;
+  --cy:#a0a0a0;--cy2:#c0c0c0;--grn:#7a9a7a;--red:#b06060;--amb:#c0a060;
+  --gl1:rgba(160,160,160,.3);--gl2:rgba(192,192,192,.2);
+}
+[data-theme="stone"] body{
+  background-color:#2a2a2a;
+  background-image:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='500' height='500'%3E%3Cfilter id='stone'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.15' numOctaves='5'/%3E%3CfeColorMatrix values='0 0 0 0 0.5 0 0 0 0 0.5 0 0 0 0 0.5 0 0 0 0.2 0'/%3E%3C/filter%3E%3Crect width='500' height='500' filter='url(%23stone)'/%3E%3C/svg%3E");
+  background-attachment:fixed;
+}
+
+/* ========== VELVET — Rich fabric ========== */
+[data-theme="velvet"]{
+  --bg-0:#1a0820;--bg-1:#1a0820;--bg-2:#120418;--sur:#2a1030;--sur2:#3a1840;
+  --sur3:#4a2050;--hov:rgba(200,100,180,.1);--hov2:rgba(200,100,180,.2);
+  --bor:rgba(200,100,180,.22);--bor2:rgba(200,100,180,.4);
+  --txt:#f0d8f0;--txt2:#d0a8d0;--dim:#a070a0;--mut:#704870;
+  --cy:#c064b0;--cy2:#d084c8;--grn:#80a080;--red:#c05070;--amb:#c0a060;
+  --gl1:rgba(192,100,176,.5);--gl2:rgba(208,132,200,.3);
+}
+[data-theme="velvet"] body{
+  background-color:#1a0820;
+  background-image:
+    radial-gradient(ellipse at 50% 40%,rgba(200,100,180,.2) 0%,transparent 60%),
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='100' height='100'%3E%3Cfilter id='vel'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.4' numOctaves='2'/%3E%3CfeColorMatrix values='0 0 0 0 0.6 0 0 0 0 0.3 0 0 0 0 0.55 0 0 0 0.08 0'/%3E%3C/filter%3E%3Crect width='100' height='100' filter='url(%23vel)'/%3E%3C/svg%3E");
+  background-attachment:fixed;
+}
+
+/* ========== Apply font to more realistic themes ========== */
 [data-theme="paper"] .msg-content,
-[data-theme="marble"] .msg-content{
-  font-family:'Georgia','Times New Roman',serif;
-}
-[data-theme="neoncity"] .brand-mark,
-[data-theme="cyberpunk"] .brand-mark{
-  animation:pulseGlow 2s ease-in-out infinite;
-}
-@keyframes pulseGlow{
-  0%,100%{filter:drop-shadow(0 0 8px currentColor)}
-  50%{filter:drop-shadow(0 0 20px currentColor)}
-}
-[data-theme="midnightsky"] .empty-logo{
-  box-shadow:0 0 40px rgba(128,144,224,.5),0 0 80px rgba(128,144,224,.25);
-}
+[data-theme="marble"] .msg-content,
+[data-theme="linen"] .msg-content,
+[data-theme="newspaper"] .msg-content{font-family:'Georgia','Times New Roman',serif}
+
+[data-theme="wood"] .msg-content,
+[data-theme="leather"] .msg-content,
+[data-theme="rust"] .msg-content,
+[data-theme="velvet"] .msg-content{font-family:var(--ef)}

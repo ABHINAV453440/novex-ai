@@ -1,14 +1,15 @@
 """
-NOVEX AI v7.0 — Flask Server
-Complete: Chat, Auth, 2FA, Quiz v2, Batch 1+2, Lingua, Voice, Rooms, Peer Doubts,
-Real-time Search (Serper + DDGS), 32 Themes
+NOVEX AI v8.0 — Flask Server (Complete)
+Features: Auth (Email + Google + 2FA), Chat, Quiz v2, Search,
+Batch1+2, Lingua, Voice, Rooms, Peer Doubts, 52 Themes
 """
 from flask import (Flask, request, jsonify, send_from_directory, Response,
-                   stream_with_context, session)
+                   stream_with_context, session, redirect)
 from flask_cors import CORS
 from waitress import serve
 from werkzeug.security import generate_password_hash, check_password_hash
 from functools import wraps
+from urllib.parse import urlencode, quote
 import os, json, uuid, datetime, secrets, asyncio, time, random
 import base64, re, requests
 from io import BytesIO
@@ -45,18 +46,13 @@ def cm(path, args):
     return convex_client.mutation(path, args)
 
 
-# ============ COMPAT SHIMS ============
+# ============ COMPAT ============
 def _active_model():
-    return getattr(nv, "ACTIVE_MODEL", None) or getattr(nv, "_ACTIVE_MODEL", "groq:openai/gpt-oss-20b")
+    return getattr(nv, "_ACTIVE_MODEL", "groq:openai/gpt-oss-120b")
 
 
 def _set_active_model(mid):
     nv.set_model(mid)
-    if hasattr(nv, "ACTIVE_MODEL"):
-        try:
-            nv.ACTIVE_MODEL = mid
-        except Exception:
-            pass
 
 
 def _quiz_active(sid):
@@ -65,9 +61,6 @@ def _quiz_active(sid):
             return nv.is_quiz_active(sid)
         except Exception:
             pass
-    if hasattr(nv, "_quiz_state"):
-        st = nv._quiz_state.get(sid) or {}
-        return bool(st.get("active"))
     return False
 
 
@@ -94,7 +87,13 @@ app.config["SESSION_REFRESH_EACH_REQUEST"] = True
 BREVO_API_KEY = os.getenv("BREVO_API_KEY", "")
 FROM_EMAIL = os.getenv("FROM_EMAIL", "noreply@novex.local")
 FROM_NAME = os.getenv("FROM_NAME", "NOVEX AI")
-APP_URL = os.getenv("APP_URL", "http://localhost:10000")
+APP_URL = os.getenv("APP_URL", "https://novex-ai.onrender.com")
+
+# Google OAuth
+GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID", "")
+GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET", "")
+GOOGLE_REDIRECT_URI = os.getenv("GOOGLE_REDIRECT_URI",
+                                 f"{APP_URL}/auth/google/callback")
 
 UPLOADS_DIR = "uploads"
 VOICE_DIR = "voice"
@@ -103,9 +102,9 @@ for d in [UPLOADS_DIR, VOICE_DIR]:
 
 AVAILABLE_MODELS = [
     {"id": "groq:openai/gpt-oss-120b", "name": "Novex Pro",
-     "provider": "Groq", "desc": "Best for coding"},
+     "provider": "Groq", "desc": "Best quality (ChatGPT-level)"},
     {"id": "groq:openai/gpt-oss-20b", "name": "Novex Balanced",
-     "provider": "Groq", "desc": "Speed + quality"},
+     "provider": "Groq", "desc": "Fast + good"},
     {"id": "groq:llama-3.3-70b-versatile", "name": "Novex Turbo",
      "provider": "Groq", "desc": "Balanced fast"},
 ]
@@ -230,7 +229,7 @@ def record_login(uid, success=True):
         pass
 
 
-# ============ GAMIFICATION HELPERS ============
+# ============ GAMIFICATION ============
 def _get_or_create_progress(user_id):
     p = cq("misc:getProgress", {"user_id": user_id})
     if not p:
@@ -285,6 +284,132 @@ def _check_badges(user_id):
                                         "badge_desc": desc})
     except Exception as e:
         print(f"[_check_badges] {e}", flush=True)
+
+
+# ============================================================
+# 🔐 GOOGLE OAUTH
+# ============================================================
+@app.route("/auth/google")
+def google_login():
+    """Redirect to Google OAuth consent screen."""
+    if not GOOGLE_CLIENT_ID:
+        return redirect("/?error=Google+login+not+configured+on+server")
+    # Store state for CSRF protection
+    state = secrets.token_urlsafe(24)
+    session["oauth_state"] = state
+    params = {
+        "client_id": GOOGLE_CLIENT_ID,
+        "redirect_uri": GOOGLE_REDIRECT_URI,
+        "response_type": "code",
+        "scope": "openid email profile",
+        "access_type": "offline",
+        "prompt": "select_account",
+        "state": state,
+    }
+    return redirect("https://accounts.google.com/o/oauth2/v2/auth?" + urlencode(params))
+
+
+@app.route("/auth/google/callback")
+def google_callback():
+    """Handle Google OAuth callback."""
+    error = request.args.get("error")
+    if error:
+        return redirect(f"/?error=Google+login+failed:+{error}")
+
+    code = request.args.get("code")
+    state = request.args.get("state")
+    saved_state = session.pop("oauth_state", None)
+
+    if not code:
+        return redirect("/?error=No+code+from+Google")
+    if not state or state != saved_state:
+        return redirect("/?error=State+mismatch+(CSRF)")
+
+    try:
+        # Exchange code for tokens
+        token_res = requests.post(
+            "https://oauth2.googleapis.com/token",
+            data={
+                "code": code,
+                "client_id": GOOGLE_CLIENT_ID,
+                "client_secret": GOOGLE_CLIENT_SECRET,
+                "redirect_uri": GOOGLE_REDIRECT_URI,
+                "grant_type": "authorization_code",
+            },
+            timeout=15,
+        )
+        if token_res.status_code != 200:
+            print(f"[google] token exchange failed: {token_res.text}", flush=True)
+            return redirect("/?error=Token+exchange+failed")
+        tokens = token_res.json()
+        access_token = tokens.get("access_token")
+
+        # Fetch user info
+        info_res = requests.get(
+            "https://www.googleapis.com/oauth2/v3/userinfo",
+            headers={"Authorization": f"Bearer {access_token}"},
+            timeout=15,
+        )
+        if info_res.status_code != 200:
+            return redirect("/?error=Could+not+fetch+user+info")
+        info = info_res.json()
+
+        email = (info.get("email") or "").lower()
+        name = info.get("name") or email.split("@")[0]
+        google_id = info.get("sub")
+
+        if not email:
+            return redirect("/?error=No+email+from+Google")
+
+        # Check if user exists
+        user = user_by_email(email)
+
+        if not user:
+            # Create new user
+            username = re.sub(r"[^a-z0-9_]", "", email.split("@")[0].lower())[:20]
+            if len(username) < 3:
+                username = f"user{random.randint(1000, 9999)}"
+            # Ensure unique username
+            base_username = username
+            counter = 1
+            while user_by_username(username):
+                username = f"{base_username}{counter}"
+                counter += 1
+                if counter > 100:
+                    username = f"user{random.randint(10000, 99999)}"
+                    break
+
+            uid = cm("users:create", {
+                "username": username,
+                "email": email,
+                "password_hash": None,
+                "display_name": name[:40],
+                "email_verified": True,
+                "auth_provider": "google",
+                "google_id": google_id,
+            })
+            user = user_by_username(username)
+            try:
+                _get_or_create_progress(uid)
+            except Exception:
+                pass
+
+        # Log in the user
+        session.permanent = True
+        session["user"] = user["username"]
+        session["user_id"] = user["_id"]
+
+        try:
+            cm("users:updateLastLogin", {"id": user["_id"]})
+            record_login(user["_id"], True)
+        except Exception:
+            pass
+
+        return redirect("/")
+
+    except Exception as e:
+        print(f"[google_callback] {e}", flush=True)
+        return redirect(f"/?error=Google+login+exception")
 
 
 # ============================================================
@@ -447,7 +572,7 @@ def login():
     if not user:
         return jsonify({"error": "Galat credentials"}), 401
     if not user.get("password_hash"):
-        return jsonify({"error": "Use Google/Magic Link"}), 401
+        return jsonify({"error": "Google account hai — 'Continue with Google' use karo"}), 401
     if not check_password_hash(user["password_hash"], password):
         record_login(user["_id"], False)
         return jsonify({"error": "Galat credentials"}), 401
@@ -593,21 +718,6 @@ def auth_2fa_disable():
     return jsonify({"ok": True})
 
 
-@app.route("/auth/sessions", methods=["GET"])
-@require_login
-def auth_sessions():
-    user = user_by_username(current_user())
-    return jsonify({"sessions": cq("auth:getHistory", {"user_id": user["_id"]}) or []})
-
-
-@app.route("/auth/sessions/clear", methods=["POST"])
-@require_login
-def auth_sessions_clear():
-    user = user_by_username(current_user())
-    cm("auth:clearHistory", {"user_id": user["_id"]})
-    return jsonify({"ok": True})
-
-
 @app.route("/auth/password/change", methods=["POST"])
 @require_login
 def auth_password_change():
@@ -635,6 +745,21 @@ def auth_account_delete():
     return jsonify({"ok": True})
 
 
+@app.route("/auth/sessions", methods=["GET"])
+@require_login
+def auth_sessions():
+    user = user_by_username(current_user())
+    return jsonify({"sessions": cq("auth:getHistory", {"user_id": user["_id"]}) or []})
+
+
+@app.route("/auth/sessions/clear", methods=["POST"])
+@require_login
+def auth_sessions_clear():
+    user = user_by_username(current_user())
+    cm("auth:clearHistory", {"user_id": user["_id"]})
+    return jsonify({"ok": True})
+
+
 @app.route("/users/search", methods=["GET"])
 @require_login
 def users_search():
@@ -655,12 +780,8 @@ def get_settings():
     user = user_by_username(current_user())
     s = cq("misc:getSettings", {"user_id": user["_id"]})
     if not s:
-        return jsonify({"custom_instructions": "",
-                        "quiet_hours": {"enabled": False, "start": "22:00",
-                                        "end": "07:00", "tz_offset": 5.5}})
-    return jsonify({"custom_instructions": s.get("custom_instructions", ""),
-                    "quiet_hours": s.get("quiet_hours", {"enabled": False, "start": "22:00",
-                                                          "end": "07:00", "tz_offset": 5.5})})
+        return jsonify({"custom_instructions": ""})
+    return jsonify({"custom_instructions": s.get("custom_instructions", "")})
 
 
 @app.route("/settings", methods=["POST"])
@@ -671,12 +792,6 @@ def update_settings():
     patch = {"user_id": user["_id"]}
     if "custom_instructions" in data:
         patch["custom_instructions"] = str(data["custom_instructions"])[:4000]
-    if "quiet_hours" in data and isinstance(data["quiet_hours"], dict):
-        qh = data["quiet_hours"]
-        patch["quiet_hours"] = {"enabled": bool(qh.get("enabled", False)),
-                                "start": str(qh.get("start", "22:00"))[:5],
-                                "end": str(qh.get("end", "07:00"))[:5],
-                                "tz_offset": float(qh.get("tz_offset", 5.5))}
     cm("misc:updateSettings", patch)
     return jsonify({"ok": True, "settings": patch})
 
@@ -888,8 +1003,6 @@ def srs_review_card():
     rating = int(data.get("rating", 2))
     if deck_id is None or card_index is None:
         return jsonify({"error": "deck_id and card_index required"}), 400
-    if rating not in [0, 1, 2, 3]:
-        return jsonify({"error": "rating must be 0-3"}), 400
     decks = cq("misc:listFlashcards", {"user_id": user["_id"]}) or []
     deck = next((d for d in decks if d["_id"] == deck_id), None)
     if not deck:
@@ -992,47 +1105,6 @@ def record_usage(uid, model, ti, to):
         print(f"[record_usage] {e}", flush=True)
 
 
-@app.route("/reminders", methods=["GET"])
-@require_login
-def list_reminders():
-    user = user_by_username(current_user())
-    items = cq("misc:listReminders", {"user_id": user["_id"]}) or []
-    return jsonify({"reminders": [{"id": r["_id"], "text": r["text"],
-                                   "when": r["when_iso"], "fired": r["fired"]}
-                                  for r in items]})
-
-
-@app.route("/reminders", methods=["POST"])
-@require_login
-def create_reminder():
-    user = user_by_username(current_user())
-    data = request.get_json() or {}
-    text = (data.get("text") or "").strip()
-    when_iso = (data.get("when") or "").strip()
-    if not text or not when_iso:
-        return jsonify({"error": "text aur when zaroori"}), 400
-    try:
-        datetime.datetime.fromisoformat(when_iso)
-    except Exception:
-        return jsonify({"error": "when ISO format"}), 400
-    rid = cm("misc:createReminder", {"user_id": user["_id"],
-                                     "text": text, "when_iso": when_iso})
-    return jsonify({"ok": True, "id": rid})
-
-
-@app.route("/reminders/<rid>", methods=["DELETE"])
-@require_login
-def delete_reminder(rid):
-    cm("misc:deleteReminder", {"id": rid})
-    return jsonify({"ok": True})
-
-
-@app.route("/reminders/pending", methods=["GET"])
-@require_login
-def pending_reminders():
-    return jsonify({"pending": []})
-
-
 @app.route("/models", methods=["GET"])
 @require_login
 def models():
@@ -1051,7 +1123,7 @@ def set_model_endpoint():
 
 
 # ============================================================
-# UPLOAD / QUIZ v2 / SEARCH
+# UPLOAD / QUIZ / SEARCH
 # ============================================================
 @app.route("/upload", methods=["POST"])
 @require_login
@@ -1069,7 +1141,6 @@ def upload():
                     "size": os.path.getsize(path)})
 
 
-# 🎯 QUIZ v2 — categories, presets, stats
 @app.route("/quiz/start", methods=["POST"])
 @require_login
 def quiz_start():
@@ -1083,73 +1154,45 @@ def quiz_start():
     if count is None:
         count = preset["count"]
     else:
-        count = int(count)
-        if count < 3:
-            count = 3
-        if count > 30:
-            count = 30
+        count = max(3, min(int(count), 30))
     result = nv.generate_quiz_json(topic, difficulty, count)
     if "error" in result:
         return jsonify(result), 500
     return jsonify(result)
 
 
-@app.route("/quiz/categories", methods=["GET"])
-@require_login
-def quiz_categories():
-    return jsonify({
-        "categories": [{"name": k, "icon": v} for k, v in nv.QUIZ_CATEGORIES.items()],
-        "difficulties": list(nv.DIFFICULTY_PRESETS.keys()),
-        "presets": nv.DIFFICULTY_PRESETS,
-    })
-
-
 @app.route("/quiz/complete", methods=["POST"])
 @require_login
 def quiz_complete():
-    """Award XP + badges for quiz completion."""
     user = user_by_username(current_user())
     data = request.get_json() or {}
     score = int(data.get("score", 0))
     total = int(data.get("total", 0))
     difficulty = (data.get("difficulty") or "medium").lower()
     max_streak = int(data.get("max_streak", 0))
-
     multiplier = nv.DIFFICULTY_PRESETS.get(difficulty, {}).get("xp", 1.0)
     base_xp = 25 + score * 10
     total_xp = int(base_xp * multiplier)
-
-    # Bonus XP
     if total > 0 and score == total:
         total_xp += nv.EXP_REWARDS.get("quiz_perfect", 50)
     if max_streak >= 10:
         total_xp += nv.EXP_REWARDS.get("quiz_streak_10", 75)
     elif max_streak >= 5:
         total_xp += nv.EXP_REWARDS.get("quiz_streak_5", 30)
-
     try:
         p = _get_or_create_progress(user["_id"])
         new_exp = (p.get("exp") or 0) + total_xp
         lvl = nv.calculate_level(new_exp)
         cm("misc:updateProgress", {"user_id": user["_id"], "exp": new_exp,
                                    "level": lvl["level"], "level_icon": lvl["icon"]})
-        cm("misc:logExp", {"user_id": user["_id"], "action": "quiz_complete",
-                           "exp_gained": total_xp,
-                           "meta": f"{score}/{total} {difficulty}"})
         _increment_counter(user["_id"], "quiz_count")
         if total > 0 and score == total:
             _increment_counter(user["_id"], "perfect_quizzes")
         _check_badges(user["_id"])
     except Exception as e:
         print(f"[quiz_complete] {e}", flush=True)
-
-    return jsonify({
-        "ok": True,
-        "exp_gained": total_xp,
-        "multiplier": multiplier,
-        "score": score,
-        "total": total,
-    })
+    return jsonify({"ok": True, "exp_gained": total_xp,
+                    "multiplier": multiplier, "score": score, "total": total})
 
 
 @app.route("/search", methods=["POST"])
@@ -1168,7 +1211,6 @@ def web_search_endpoint():
                         "provider": nv._last_search_provider,
                         "count": len(results)})
     except Exception as e:
-        print(f"[search endpoint] {e}", flush=True)
         return jsonify({"ok": False, "error": str(e)}), 500
 
 
@@ -1182,7 +1224,6 @@ def search_providers():
         },
         "default": os.getenv("SEARCH_DEFAULT_PROVIDER", "serper"),
         "max_results": int(os.getenv("SEARCH_MAX_RESULTS", "6")),
-        "region": os.getenv("SEARCH_REGION", "in-en"),
     })
 
 
@@ -1256,21 +1297,8 @@ def gamification_profile():
     })
 
 
-@app.route("/gamification/award", methods=["POST"])
-@require_login
-def gamification_award():
-    user = user_by_username(current_user())
-    data = request.get_json() or {}
-    action = (data.get("action") or "").strip()
-    if action not in nv.EXP_REWARDS:
-        return jsonify({"error": "Unknown action"}), 400
-    _award_exp(user["_id"], action, (data.get("meta") or "").strip())
-    _check_badges(user["_id"])
-    return jsonify({"ok": True})
-
-
 # ============================================================
-# BATCH 1 — Study Tools+
+# BATCH 1
 # ============================================================
 @app.route("/formula-sheet/generate", methods=["POST"])
 @require_login
@@ -1287,21 +1315,6 @@ def formula_sheet_generate():
                                           "chapters": chapters, "content": result["content"]})
     _award_exp(user["_id"], "doc_generate")
     return jsonify({"ok": True, "id": fid, **result})
-
-
-@app.route("/formula-sheets", methods=["GET"])
-@require_login
-def list_formula_sheets():
-    user = user_by_username(current_user())
-    items = cq("misc:listFormulaSheets", {"user_id": user["_id"]}) or []
-    return jsonify({"sheets": items})
-
-
-@app.route("/formula-sheets/<sid>", methods=["DELETE"])
-@require_login
-def delete_formula_sheet(sid):
-    cm("misc:deleteFormulaSheet", {"id": sid})
-    return jsonify({"ok": True})
 
 
 @app.route("/mind-map/generate", methods=["POST"])
@@ -1322,21 +1335,6 @@ def mind_map_generate():
     return jsonify({"ok": True, "id": mid, **result})
 
 
-@app.route("/mind-maps", methods=["GET"])
-@require_login
-def list_mind_maps():
-    user = user_by_username(current_user())
-    items = cq("misc:listMindMaps", {"user_id": user["_id"]}) or []
-    return jsonify({"maps": items})
-
-
-@app.route("/mind-maps/<mid>", methods=["DELETE"])
-@require_login
-def delete_mind_map(mid):
-    cm("misc:deleteMindMap", {"id": mid})
-    return jsonify({"ok": True})
-
-
 @app.route("/weak-topics/analyze", methods=["GET"])
 @require_login
 def weak_topics_analyze():
@@ -1354,11 +1352,6 @@ def podcast_generate():
     source = (data.get("source") or "").strip()
     title = (data.get("title") or "Study Podcast").strip()
     lang = (data.get("language") or "hinglish").strip()
-    chat_id = data.get("chat_id")
-    if chat_id and not source:
-        c = cq("chats:getById", {"id": chat_id, "viewer_id": user["_id"]})
-        if c:
-            source = "\n".join(m.get("content", "") for m in c.get("messages", [])[-8:])
     if not source:
         return jsonify({"error": "Source text required"}), 400
     result = nv.generate_podcast_script(source[:3000], title, lang)
@@ -1371,21 +1364,6 @@ def podcast_generate():
                                      "duration_sec": len(result["lines"]) * 10})
     _award_exp(user["_id"], "doc_generate")
     return jsonify({"ok": True, "id": pid, **result})
-
-
-@app.route("/podcasts", methods=["GET"])
-@require_login
-def list_podcasts():
-    user = user_by_username(current_user())
-    items = cq("misc:listPodcasts", {"user_id": user["_id"]}) or []
-    return jsonify({"podcasts": items})
-
-
-@app.route("/podcasts/<pid>", methods=["DELETE"])
-@require_login
-def delete_podcast(pid):
-    cm("misc:deletePodcast", {"id": pid})
-    return jsonify({"ok": True})
 
 
 @app.route("/debate/start", methods=["POST"])
@@ -1404,7 +1382,6 @@ def debate_start():
 @app.route("/debate/round", methods=["POST"])
 @require_login
 def debate_round():
-    user = user_by_username(current_user())
     data = request.get_json() or {}
     did = data.get("debate_id")
     topic = (data.get("topic") or "").strip()
@@ -1415,473 +1392,28 @@ def debate_round():
     arg_a = nv.debate_generate(topic, round_num, history, "A")
     hist_with_a = history + [{"speaker": "A", "content": arg_a}]
     arg_b = nv.debate_generate(topic, round_num, hist_with_a, "B")
-    cm("misc:appendDebateMessage", {"debate_id": did, "speaker": "A", "content": arg_a})
-    cm("misc:appendDebateMessage", {"debate_id": did, "speaker": "B", "content": arg_b})
+    try:
+        cm("misc:appendDebateMessage", {"debate_id": did, "speaker": "A", "content": arg_a})
+        cm("misc:appendDebateMessage", {"debate_id": did, "speaker": "B", "content": arg_b})
+    except Exception:
+        pass
     return jsonify({"ok": True, "arg_a": arg_a, "arg_b": arg_b})
 
 
 @app.route("/debate/verdict", methods=["POST"])
 @require_login
 def debate_verdict_ep():
-    user = user_by_username(current_user())
     data = request.get_json() or {}
     did = data.get("debate_id")
     topic = data.get("topic", "")
     history = data.get("history") or []
     verdict = nv.debate_verdict(topic, history)
     if did:
-        cm("misc:setDebateVerdict", {"debate_id": did, "verdict": verdict})
+        try:
+            cm("misc:setDebateVerdict", {"debate_id": did, "verdict": verdict})
+        except Exception:
+            pass
     return jsonify({"ok": True, "verdict": verdict})
-
-
-@app.route("/written-test/generate", methods=["POST"])
-@require_login
-def written_test_generate():
-    user = user_by_username(current_user())
-    data = request.get_json() or {}
-    topic = (data.get("topic") or "").strip()
-    qtype = (data.get("qtype") or "fill_blank").strip()
-    count = int(data.get("count") or 5)
-    if not topic:
-        return jsonify({"error": "Topic required"}), 400
-    result = nv.generate_written_test(topic, qtype, count)
-    if "error" in result:
-        return jsonify(result), 500
-    return jsonify(result)
-
-
-@app.route("/mock-test/generate", methods=["POST"])
-@require_login
-def mock_test_generate():
-    user = user_by_username(current_user())
-    data = request.get_json() or {}
-    exam = (data.get("exam") or "JEE Main").strip()
-    subjects = data.get("subjects") or ["Physics", "Chemistry", "Mathematics"]
-    count = int(data.get("count") or 10)
-    difficulty = (data.get("difficulty") or "medium").strip()
-    result = nv.generate_mock_test(exam, subjects, count, difficulty)
-    if "error" in result:
-        return jsonify(result), 500
-    tid = cm("misc:createMockTest", {"user_id": user["_id"], "exam": exam,
-                                      "subjects": subjects,
-                                      "duration_min": result.get("duration_min", count * 2),
-                                      "total_questions": count,
-                                      "questions_json": json.dumps(result.get("questions", []))})
-    return jsonify({"ok": True, "id": tid, **result})
-
-
-@app.route("/mock-test/<tid>/submit", methods=["POST"])
-@require_login
-def mock_test_submit(tid):
-    user = user_by_username(current_user())
-    data = request.get_json() or {}
-    answers = data.get("answers") or []
-    time_taken = int(data.get("time_taken") or 0)
-    test = cq("misc:getMockTest", {"id": tid})
-    if not test:
-        return jsonify({"error": "Not found"}), 404
-    try:
-        questions = json.loads(test["questions_json"])
-    except Exception:
-        return jsonify({"error": "Invalid test"}), 400
-    correct = wrong = unattempted = total_marks = 0
-    subject_stats = {}
-    for i, q in enumerate(questions):
-        subj = q.get("subject", "General")
-        subject_stats.setdefault(subj, {"correct": 0, "wrong": 0, "total": 0})
-        subject_stats[subj]["total"] += 1
-        ans = next((a for a in answers if a.get("idx") == i), None)
-        marks = q.get("marks", 4)
-        neg = q.get("negative", 1)
-        if not ans or not ans.get("choice"):
-            unattempted += 1
-            continue
-        if ans.get("choice") == q.get("answer"):
-            correct += 1
-            total_marks += marks
-            subject_stats[subj]["correct"] += 1
-        else:
-            wrong += 1
-            total_marks -= neg
-            subject_stats[subj]["wrong"] += 1
-    analysis = {"subject_stats": subject_stats, "correct": correct,
-                "wrong": wrong, "unattempted": unattempted}
-    cm("misc:submitMockTest", {"id": tid, "score": total_marks,
-                                "analysis_json": json.dumps(analysis)})
-    _award_exp(user["_id"], "quiz_complete")
-    _increment_counter(user["_id"], "quiz_count")
-    _check_badges(user["_id"])
-    return jsonify({"ok": True, "score": total_marks, "analysis": analysis})
-
-
-@app.route("/mock-tests", methods=["GET"])
-@require_login
-def list_mock_tests():
-    user = user_by_username(current_user())
-    items = cq("misc:listMockTests", {"user_id": user["_id"]}) or []
-    return jsonify({"tests": items})
-
-
-@app.route("/parent-report/generate", methods=["POST"])
-@require_login
-def parent_report_generate():
-    user = user_by_username(current_user())
-    data = request.get_json() or {}
-    parent_email = (data.get("parent_email") or "").strip()
-    period = (data.get("period") or "weekly").strip()
-    attempts = cq("progress:listQuizAttempts", {"user_id": user["_id"], "limit": 50}) or []
-    progress = cq("misc:getProgress", {"user_id": user["_id"]}) or {}
-    weak = nv.analyze_weak_topics(attempts)
-    total_q = sum(a.get("total", 0) for a in attempts)
-    total_c = sum(a.get("score", 0) for a in attempts)
-    avg = round((total_c / total_q) * 100) if total_q else 0
-    content = f"📊 **{user.get('display_name', user['username'])} — {period.capitalize()} Report**\n\n"
-    content += f"- 🎯 **Level:** {progress.get('level', 'Beginner')} ({progress.get('exp', 0)} EXP)\n"
-    content += f"- 📝 **Quizzes:** {len(attempts)} attempts, avg {avg}%\n"
-    content += f"- 📚 **Flashcards:** {progress.get('flashcards_reviewed', 0)} reviewed\n"
-    content += f"- 📸 **Doubts Solved:** {progress.get('doubts_solved', 0)}\n"
-    content += f"- ⏱️ **Focus Sessions:** {progress.get('pomodoros_done', 0)}\n\n"
-    if weak:
-        content += "⚠️ **Weak Topics:**\n"
-        for w in weak[:5]:
-            content += f"- {w['topic']} — {w['accuracy']}%\n"
-    else:
-        content += "✅ No weak topics detected. Great work!\n"
-    content += "\n— NOVEX AI"
-    rid = cm("misc:createParentReport", {"user_id": user["_id"], "parent_email": parent_email,
-                                          "period": period, "content": content, "sent": False})
-    return jsonify({"ok": True, "id": rid, "content": content})
-
-
-@app.route("/parent-report/send", methods=["POST"])
-@require_login
-def parent_report_send():
-    user = user_by_username(current_user())
-    data = request.get_json() or {}
-    rid = data.get("report_id")
-    if not rid:
-        return jsonify({"error": "report_id required"}), 400
-    report = cq("misc:getParentReport", {"id": rid})
-    if not report:
-        return jsonify({"error": "Not found"}), 404
-    if report.get("parent_email"):
-        send_email(report["parent_email"], "NOVEX AI — Student Progress Report",
-                   report.get("content", ""))
-        cm("misc:markParentReportSent", {"id": rid})
-    return jsonify({"ok": True})
-
-
-# ============================================================
-# BATCH 2 — Voice Tutor / Rooms / Avatar / Peer Doubts
-# ============================================================
-@app.route("/voice/tutor/start", methods=["POST"])
-@require_login
-def voice_tutor_start():
-    user = user_by_username(current_user())
-    data = request.get_json() or {}
-    topic = (data.get("topic") or "General").strip()
-    sid = cm("misc:createVoiceSession", {"user_id": user["_id"], "topic": topic})
-    return jsonify({"ok": True, "session_id": sid, "topic": topic})
-
-
-@app.route("/voice/tutor/message", methods=["POST"])
-@require_login
-def voice_tutor_message():
-    user = user_by_username(current_user())
-    data = request.get_json() or {}
-    sid = data.get("session_id")
-    speech = (data.get("speech") or "").strip()
-    if not sid or not speech:
-        return jsonify({"error": "session_id and speech required"}), 400
-    session_data = cq("misc:getVoiceSession", {"id": sid})
-    history = []
-    if session_data:
-        history = [{"role": m["role"], "content": m["content"]}
-                   for m in session_data.get("messages", [])]
-    result = nv.voice_tutor_reply(
-        session_data.get("topic", "General") if session_data else "General",
-        speech, history)
-    if "error" in result:
-        return jsonify(result), 500
-    cm("misc:appendVoiceMessage", {"session_id": sid, "role": "user", "content": speech})
-    cm("misc:appendVoiceMessage", {"session_id": sid, "role": "tutor", "content": result["reply"]})
-    _award_exp(user["_id"], "chat_message")
-    return jsonify({"ok": True, "reply": result["reply"]})
-
-
-@app.route("/voice/tutor/stop", methods=["POST"])
-@require_login
-def voice_tutor_stop():
-    user = user_by_username(current_user())
-    data = request.get_json() or {}
-    sid = data.get("session_id")
-    if sid:
-        cm("misc:endVoiceSession", {"session_id": sid})
-    _award_exp(user["_id"], "quiz_complete")
-    return jsonify({"ok": True})
-
-
-@app.route("/rooms/create", methods=["POST"])
-@require_login
-def rooms_create():
-    user = user_by_username(current_user())
-    data = request.get_json() or {}
-    topic = (data.get("topic") or "General Knowledge").strip()
-    difficulty = (data.get("difficulty") or "medium").strip()
-    count = int(data.get("count") or 10)
-    questions = nv.generate_room_questions(topic, difficulty, count)
-    if not questions:
-        return jsonify({"error": "Could not generate questions"}), 500
-    code = "".join(random.choices("ABCDEFGHJKLMNPQRSTUVWXYZ23456789", k=6))
-    rid = cm("misc:createStudyRoom", {
-        "host_id": user["_id"], "host_name": user.get("display_name", user["username"]),
-        "room_code": code, "topic": topic, "difficulty": difficulty,
-        "question_count": count, "questions_json": json.dumps(questions),
-        "avatar": (user.get("display_name") or "U")[0].upper(),
-    })
-    return jsonify({"ok": True, "room_id": rid, "room_code": code,
-                    "topic": topic, "count": len(questions)})
-
-
-@app.route("/rooms/join", methods=["POST"])
-@require_login
-def rooms_join():
-    user = user_by_username(current_user())
-    data = request.get_json() or {}
-    code = (data.get("code") or "").strip().upper()
-    if not code:
-        return jsonify({"error": "Room code required"}), 400
-    room = cq("misc:getRoomByCode", {"code": code})
-    if not room:
-        return jsonify({"error": "Room not found"}), 404
-    if room.get("status") == "finished":
-        return jsonify({"error": "Room ended"}), 400
-    result = cm("misc:joinStudyRoom", {"room_id": room["_id"], "user_id": user["_id"],
-                                        "username": user["username"],
-                                        "display_name": user.get("display_name", user["username"]),
-                                        "avatar": (user.get("display_name") or "U")[0].upper()})
-    return jsonify({"ok": True, "room_id": room["_id"], **result})
-
-
-@app.route("/rooms/<rid>", methods=["GET"])
-@require_login
-def rooms_get(rid):
-    room = cq("misc:getStudyRoom", {"id": rid})
-    if not room:
-        return jsonify({"error": "Not found"}), 404
-    return jsonify(room)
-
-
-@app.route("/rooms/<rid>/start", methods=["POST"])
-@require_login
-def rooms_start(rid):
-    user = user_by_username(current_user())
-    room = cq("misc:getStudyRoom", {"id": rid})
-    if not room:
-        return jsonify({"error": "Not found"}), 404
-    if room.get("host_id") != user["_id"]:
-        return jsonify({"error": "Only host can start"}), 403
-    cm("misc:startStudyRoom", {"room_id": rid})
-    return jsonify({"ok": True})
-
-
-@app.route("/rooms/<rid>/answer", methods=["POST"])
-@require_login
-def rooms_answer(rid):
-    user = user_by_username(current_user())
-    data = request.get_json() or {}
-    idx = int(data.get("idx") or 0)
-    choice = (data.get("choice") or "").strip().upper()
-    time_ms = int(data.get("time_ms") or 0)
-    result = cm("misc:submitRoomAnswer", {"room_id": rid, "user_id": user["_id"],
-                                            "idx": idx, "choice": choice, "time_ms": time_ms})
-    return jsonify({"ok": True, **result})
-
-
-@app.route("/rooms/<rid>/next", methods=["POST"])
-@require_login
-def rooms_next(rid):
-    user = user_by_username(current_user())
-    room = cq("misc:getStudyRoom", {"id": rid})
-    if not room:
-        return jsonify({"error": "Not found"}), 404
-    if room.get("host_id") != user["_id"]:
-        return jsonify({"error": "Only host"}), 403
-    result = cm("misc:nextRoomQuestion", {"room_id": rid})
-    return jsonify({"ok": True, **result})
-
-
-@app.route("/rooms/<rid>/leave", methods=["POST"])
-@require_login
-def rooms_leave(rid):
-    user = user_by_username(current_user())
-    cm("misc:leaveStudyRoom", {"room_id": rid, "user_id": user["_id"]})
-    return jsonify({"ok": True})
-
-
-@app.route("/avatar/me", methods=["GET"])
-@require_login
-def avatar_get():
-    user = user_by_username(current_user())
-    av = cq("misc:getAvatar", {"user_id": user["_id"]})
-    if not av:
-        cm("misc:createAvatar", {"user_id": user["_id"]})
-        av = cq("misc:getAvatar", {"user_id": user["_id"]})
-    unlocks = cq("misc:listUnlocks", {"user_id": user["_id"]}) or []
-    return jsonify({"avatar": av, "unlocks": unlocks})
-
-
-@app.route("/avatar/update", methods=["POST"])
-@require_login
-def avatar_update():
-    user = user_by_username(current_user())
-    data = request.get_json() or {}
-    patch = {}
-    for k in ("emoji", "color", "bg_pattern", "equipped"):
-        if k in data:
-            patch[k] = str(data[k])[:30]
-    cm("misc:updateAvatar", {"user_id": user["_id"], **patch})
-    return jsonify({"ok": True})
-
-
-@app.route("/avatar/unlock", methods=["POST"])
-@require_login
-def avatar_unlock():
-    user = user_by_username(current_user())
-    data = request.get_json() or {}
-    item_id = (data.get("item_id") or "").strip()
-    item_type = (data.get("item_type") or "accessory").strip()
-    if not item_id:
-        return jsonify({"error": "item_id required"}), 400
-    result = cm("misc:unlockItem", {"user_id": user["_id"], "item_id": item_id,
-                                     "item_type": item_type})
-    return jsonify({"ok": True, **result})
-
-
-@app.route("/peer-doubts", methods=["GET"])
-@require_login
-def peer_doubts_list():
-    subject = request.args.get("subject", "")
-    status = request.args.get("status", "open")
-    items = cq("misc:listPeerDoubts", {"subject": subject, "status": status}) or []
-    return jsonify({"doubts": items[:50]})
-
-
-@app.route("/peer-doubts", methods=["POST"])
-@require_login
-def peer_doubts_create():
-    user = user_by_username(current_user())
-    data = request.get_json() or {}
-    title = (data.get("title") or "").strip()
-    body = (data.get("body") or "").strip()
-    subject = (data.get("subject") or "General").strip()
-    topic = (data.get("topic") or "").strip()
-    image_url = (data.get("image_url") or "").strip()
-    if not title or not body:
-        return jsonify({"error": "Title aur body required"}), 400
-    payload = {"user_id": user["_id"], "username": user["username"],
-               "display_name": user.get("display_name", user["username"]),
-               "avatar": (user.get("display_name") or "U")[0].upper(),
-               "title": title[:200], "body": body[:3000],
-               "subject": subject, "topic": topic}
-    if image_url:
-        payload["image_url"] = image_url
-    did = cm("misc:createPeerDoubt", payload)
-    _award_exp(user["_id"], "chat_message")
-    return jsonify({"ok": True, "id": did})
-
-
-@app.route("/peer-doubts/<did>/answer", methods=["POST"])
-@require_login
-def peer_doubts_answer(did):
-    user = user_by_username(current_user())
-    data = request.get_json() or {}
-    content = (data.get("content") or "").strip()
-    if not content:
-        return jsonify({"error": "Answer required"}), 400
-    doubt = cq("misc:getPeerDoubt", {"id": did})
-    if not doubt:
-        return jsonify({"error": "Not found"}), 404
-    ai = nv.verify_peer_answer(doubt.get("title", ""), content, doubt.get("subject", "General"))
-    result = cm("misc:addPeerAnswer", {"doubt_id": did, "user_id": user["_id"],
-                                        "username": user["username"],
-                                        "display_name": user.get("display_name", user["username"]),
-                                        "avatar": (user.get("display_name") or "U")[0].upper(),
-                                        "content": content[:3000],
-                                        "is_verified": bool(ai.get("is_correct", False)),
-                                        "ai_rating": int(ai.get("rating", 3))})
-    if ai.get("is_correct"):
-        _award_exp(user["_id"], "quiz_correct")
-    return jsonify({"ok": True, "ai_feedback": ai, **result})
-
-
-@app.route("/peer-doubts/<did>/upvote", methods=["POST"])
-@require_login
-def peer_doubts_upvote(did):
-    cm("misc:upvotePeerDoubt", {"doubt_id": did})
-    return jsonify({"ok": True})
-
-
-@app.route("/peer-doubts/<did>/solve", methods=["POST"])
-@require_login
-def peer_doubts_solve(did):
-    user = user_by_username(current_user())
-    data = request.get_json() or {}
-    idx = data.get("answer_idx")
-    doubt = cq("misc:getPeerDoubt", {"id": did})
-    if not doubt:
-        return jsonify({"error": "Not found"}), 404
-    if doubt.get("user_id") != user["_id"]:
-        return jsonify({"error": "Only asker can mark solved"}), 403
-    cm("misc:markDoubtSolved", {"doubt_id": did, "answer_idx": idx})
-    return jsonify({"ok": True})
-
-
-@app.route("/preferences", methods=["GET"])
-@require_login
-def prefs_get():
-    user = user_by_username(current_user())
-    p = cq("misc:getPreferences", {"user_id": user["_id"]})
-    if not p:
-        cm("misc:createPreferences", {"user_id": user["_id"]})
-        p = cq("misc:getPreferences", {"user_id": user["_id"]})
-    return jsonify(p or {})
-
-
-@app.route("/preferences", methods=["POST"])
-@require_login
-def prefs_update():
-    user = user_by_username(current_user())
-    data = request.get_json() or {}
-    patch = {}
-    for k in ("ui_language", "ai_language"):
-        if k in data:
-            patch[k] = str(data[k])[:10]
-    for k in ("voice_enabled", "auto_speak", "notifications"):
-        if k in data:
-            patch[k] = bool(data[k])
-    if "voice_speed" in data:
-        patch["voice_speed"] = max(0.5, min(2.0, float(data["voice_speed"])))
-    cm("misc:updatePreferences", {"user_id": user["_id"], **patch})
-    return jsonify({"ok": True})
-
-
-@app.route("/transcribe", methods=["POST"])
-@require_login
-def transcribe():
-    if "audio" not in request.files:
-        return jsonify({"error": "No audio file"}), 400
-    f = request.files["audio"]
-    uid = uuid.uuid4().hex[:8]
-    ext = os.path.splitext(f.filename)[1] or ".webm"
-    path = os.path.join(UPLOADS_DIR, f"voice_{uid}{ext}")
-    f.save(path)
-    text = nv.transcribe_audio_whisper(path)
-    try:
-        os.remove(path)
-    except Exception:
-        pass
-    return jsonify({"ok": True, "text": text})
 
 
 # ============================================================
@@ -1894,12 +1426,6 @@ def lingua_all_langs():
     learners = ["en", "hi", "ta", "te", "bn", "mr", "pa", "gu", "kn", "ml", "ur"]
     return jsonify({"from_lang": from_lang, "learnable": all_langs,
                     "learner_languages": learners})
-
-
-@app.route("/languages/from/<from_code>", methods=["GET"])
-def lingua_langs_from(from_code):
-    langs = cq("language:listLanguages", {"from_lang": from_code}) or []
-    return jsonify({"from_lang": from_code, "languages": langs})
 
 
 @app.route("/languages/<code>/units", methods=["GET"])
@@ -1964,186 +1490,35 @@ def lingua_complete_lesson(code, lesson_id):
     vocab_learned = data.get("vocab", [])
     pct = int((score / total) * 100) if total else 0
     xp = 10 + score * 2 + (20 if pct == 100 else 0)
-    cm("language:recordAttempt", {"user_id": user["_id"], "language_code": code,
-                                   "lesson_id": lesson_id, "unit_number": unit_number,
-                                   "lesson_number": lesson_number,
-                                   "score": score, "total": total, "time_taken": time_taken,
-                                   "mistakes_json": json.dumps(mistakes), "xp_gained": xp})
-    result = cm("language:upsertProgress", {"user_id": user["_id"], "language_code": code,
-                                             "from_lang": "en",
-                                             "current_unit": unit_number,
-                                             "current_lesson": lesson_number + 1,
-                                             "xp_delta": xp, "lessons_delta": 1,
-                                             "words_delta": len(vocab_learned)})
+    try:
+        cm("language:recordAttempt", {"user_id": user["_id"], "language_code": code,
+                                       "lesson_id": lesson_id, "unit_number": unit_number,
+                                       "lesson_number": lesson_number,
+                                       "score": score, "total": total,
+                                       "time_taken": time_taken,
+                                       "mistakes_json": json.dumps(mistakes),
+                                       "xp_gained": xp})
+        result = cm("language:upsertProgress", {"user_id": user["_id"], "language_code": code,
+                                                 "from_lang": "en",
+                                                 "current_unit": unit_number,
+                                                 "current_lesson": lesson_number + 1,
+                                                 "xp_delta": xp, "lessons_delta": 1,
+                                                 "words_delta": len(vocab_learned)}) or {}
+    except Exception:
+        result = {}
     if vocab_learned:
-        cm("language:bulkAddVocab", {"user_id": user["_id"], "language_code": code,
-                                      "words": [{"word": v.get("word", ""),
-                                                 "translation": v.get("translation", ""),
-                                                 "example": v.get("example", "")}
-                                                for v in vocab_learned],
-                                      "source": "lesson"})
+        try:
+            cm("language:bulkAddVocab", {"user_id": user["_id"], "language_code": code,
+                                          "words": [{"word": v.get("word", ""),
+                                                     "translation": v.get("translation", ""),
+                                                     "example": v.get("example", "")}
+                                                    for v in vocab_learned],
+                                          "source": "lesson"})
+        except Exception:
+            pass
     _award_exp(user["_id"], "language_lesson")
     _check_badges(user["_id"])
     return jsonify({"ok": True, "xp_gained": xp, "streak": result.get("streak", 1)})
-
-
-@app.route("/languages/<code>/vocab", methods=["GET"])
-@require_login
-def lingua_vocab(code):
-    user = user_by_username(current_user())
-    items = cq("language:listVocab", {"user_id": user["_id"], "language_code": code}) or []
-    now_ms = int(datetime.datetime.now().timestamp() * 1000)
-    due = [v for v in items if (v.get("next_review") or 0) <= now_ms]
-    return jsonify({"vocab": items, "due_count": len(due), "total": len(items)})
-
-
-@app.route("/languages/<code>/vocab/due", methods=["GET"])
-@require_login
-def lingua_vocab_due(code):
-    user = user_by_username(current_user())
-    items = cq("language:listVocab", {"user_id": user["_id"], "language_code": code}) or []
-    now_ms = int(datetime.datetime.now().timestamp() * 1000)
-    due = [v for v in items if (v.get("next_review") or 0) <= now_ms]
-    due.sort(key=lambda x: x.get("next_review", 0))
-    return jsonify({"due": due[:20], "total_due": len(due)})
-
-
-@app.route("/languages/<code>/vocab/review", methods=["POST"])
-@require_login
-def lingua_vocab_review(code):
-    user = user_by_username(current_user())
-    data = request.get_json() or {}
-    vocab_id = data.get("vocab_id")
-    rating = int(data.get("rating", 2))
-    if not vocab_id:
-        return jsonify({"error": "vocab_id required"}), 400
-    items = cq("language:listVocab", {"user_id": user["_id"], "language_code": code}) or []
-    card = next((v for v in items if v["_id"] == vocab_id), None)
-    if not card:
-        return jsonify({"error": "Not found"}), 404
-    result = nv.srs_next(ease_factor=card.get("ease_factor") or 2.5,
-                          interval_days=card.get("interval_days") or 0,
-                          repetitions=card.get("repetitions") or 0, rating=rating)
-    cm("language:updateVocabSRS", {"id": vocab_id, **result})
-    _award_exp(user["_id"], "language_review")
-    _check_badges(user["_id"])
-    return jsonify({"ok": True, "next_review": result["next_review"]})
-
-
-@app.route("/languages/<code>/vocab/add", methods=["POST"])
-@require_login
-def lingua_vocab_add(code):
-    user = user_by_username(current_user())
-    data = request.get_json() or {}
-    word = (data.get("word") or "").strip()
-    translation = (data.get("translation") or "").strip()
-    if not word or not translation:
-        return jsonify({"error": "word aur translation required"}), 400
-    result = cm("language:addVocab", {"user_id": user["_id"], "language_code": code,
-                                       "word": word, "translation": translation,
-                                       "example": data.get("example", ""), "source": "custom"})
-    return jsonify({"ok": True, "id": result.get("id"),
-                    "duplicate": result.get("duplicate", False)})
-
-
-@app.route("/languages/<code>/vocab/<vocab_id>", methods=["DELETE"])
-@require_login
-def lingua_vocab_delete(code, vocab_id):
-    cm("language:deleteVocab", {"id": vocab_id})
-    return jsonify({"ok": True})
-
-
-@app.route("/languages/<code>/vocab/extract", methods=["POST"])
-@require_login
-def lingua_vocab_extract(code):
-    user = user_by_username(current_user())
-    data = request.get_json() or {}
-    text = (data.get("text") or "").strip()
-    if not text:
-        return jsonify({"error": "text required"}), 400
-    words = nv.extract_vocab_from_text(text, code, "en", 20)
-    if not words:
-        return jsonify({"error": "Could not extract"}), 500
-    result = cm("language:bulkAddVocab", {"user_id": user["_id"], "language_code": code,
-                                            "words": words, "source": "custom"})
-    return jsonify({"ok": True, "added": result.get("added", 0),
-                    "skipped": result.get("skipped", 0), "words": words})
-
-
-@app.route("/languages/<code>/chat/start", methods=["POST"])
-@require_login
-def lingua_chat_start(code):
-    user = user_by_username(current_user())
-    data = request.get_json() or {}
-    scenario = (data.get("scenario") or "casual conversation").strip()
-    cid = cm("language:createConvo", {"user_id": user["_id"], "language_code": code,
-                                        "scenario": scenario})
-    return jsonify({"ok": True, "convo_id": cid})
-
-
-@app.route("/languages/<code>/chat/message", methods=["POST"])
-@require_login
-def lingua_chat_message(code):
-    user = user_by_username(current_user())
-    data = request.get_json() or {}
-    convo_id = data.get("convo_id")
-    message = (data.get("message") or "").strip()
-    if not convo_id or not message:
-        return jsonify({"error": "convo_id and message required"}), 400
-    convo = cq("language:getConvo", {"id": convo_id})
-    if not convo:
-        return jsonify({"error": "Convo not found"}), 404
-    history = [{"role": m["role"], "content": m["content"]} for m in convo.get("messages", [])]
-    result = nv.language_chat(code, message, convo.get("scenario", ""), history)
-    cm("language:appendConvoMessage", {"convo_id": convo_id, "role": "user", "content": message})
-    msg_payload = {"convo_id": convo_id, "role": "assistant",
-                   "content": result.get("reply", "")}
-    if result.get("translation"):
-        msg_payload["translation"] = result.get("translation")
-    if result.get("correction"):
-        msg_payload["correction"] = result.get("correction")
-    cm("language:appendConvoMessage", msg_payload)
-    _award_exp(user["_id"], "language_chat")
-    return jsonify({"ok": True, **result})
-
-
-@app.route("/languages/<code>/chat/list", methods=["GET"])
-@require_login
-def lingua_chat_list(code):
-    user = user_by_username(current_user())
-    convos = cq("language:listConvos", {"user_id": user["_id"], "language_code": code}) or []
-    return jsonify({"convos": convos})
-
-
-@app.route("/languages/<code>/mistake-explain", methods=["POST"])
-@require_login
-def lingua_mistake_explain(code):
-    data = request.get_json() or {}
-    exercise = data.get("exercise") or {}
-    user_answer = (data.get("user_answer") or "").strip()
-    explanation = nv.explain_mistake(exercise, user_answer, code, "en")
-    return jsonify({"ok": True, "explanation": explanation})
-
-
-@app.route("/curriculum/<board>/<int:class_num>/<subject>", methods=["GET"])
-def curriculum_get(board, class_num, subject):
-    items = cq("language:listCurriculum", {"board": board, "class_num": class_num,
-                                             "subject": subject}) or []
-    return jsonify({"curriculum": items})
-
-
-@app.route("/pyqs", methods=["GET"])
-def pyqs_list():
-    exam = request.args.get("exam", "JEE Main")
-    subject = request.args.get("subject", "")
-    year = request.args.get("year")
-    args = {"exam": exam}
-    if subject:
-        args["subject"] = subject
-    if year:
-        args["year"] = int(year)
-    items = cq("language:listPYQs", args) or []
-    return jsonify({"pyqs": items[:50]})
 
 
 # ============================================================
@@ -2177,10 +1552,8 @@ def chat_stream():
         title_src = message or (attachments[0] if attachments else "New chat")
         if deep_explain:
             title_src = "💡 " + title_src
-        create_payload = {
-            "user_id": chat_owner_id,
-            "title": title_src[:45] + ("…" if len(title_src) > 45 else ""),
-        }
+        create_payload = {"user_id": chat_owner_id,
+                          "title": title_src[:45] + ("…" if len(title_src) > 45 else "")}
         if project_id:
             create_payload["project_id"] = project_id
         chat_id = cm("chats:create", create_payload)
@@ -2189,11 +1562,8 @@ def chat_stream():
         final_message = ((message or "Analyze") + "\n\n[Attached: " + ", ".join(attachments) + "]")
     sender = user["username"] if chat_owner_id != user["_id"] else None
 
-    user_msg_payload = {
-        "chat_id": chat_id,
-        "role": "user",
-        "content": ("💡 Deep Explain: " if deep_explain else "") + final_message,
-    }
+    user_msg_payload = {"chat_id": chat_id, "role": "user",
+                        "content": ("💡 Deep Explain: " if deep_explain else "") + final_message}
     if attachments:
         user_msg_payload["attachments"] = attachments
     if sender:
@@ -2223,11 +1593,8 @@ def chat_stream():
                     full += chunk
                     yield f"data: {json.dumps({'chunk': chunk})}\n\n".encode("utf-8")
                 cm("chats:appendMessage", {"chat_id": chat_id, "role": "assistant", "content": full})
-                try:
-                    _award_exp(user["_id"], "chat_message")
-                    _check_badges(user["_id"])
-                except Exception:
-                    pass
+                _award_exp(user["_id"], "chat_message")
+                _check_badges(user["_id"])
                 yield f"data: {json.dumps({'done': True, 'full': full})}\n\n".encode("utf-8")
                 return
 
@@ -2237,12 +1604,8 @@ def chat_stream():
                 cm("misc:createReminder", {"user_id": user["_id"],
                                             "text": reminder_result["text"],
                                             "when_iso": reminder_result["when"]})
-                qh = user_settings.get("quiet_hours", {})
-                extra = ""
-                if qh.get("enabled"):
-                    extra = f"\n\n_🌙 Quiet hours ({qh.get('start')}–{qh.get('end')})._"
                 full = (f"✓ **Reminder set**\n\n- **Kaam:** {reminder_result['text']}\n"
-                        f"- **Kab:** {when_dt.strftime('%A, %d %B %Y, %I:%M %p')}{extra}")
+                        f"- **Kab:** {when_dt.strftime('%A, %d %B %Y, %I:%M %p')} (IST)")
                 for i in range(0, len(full), 4):
                     yield f"data: {json.dumps({'chunk': full[i:i+4]})}\n\n".encode("utf-8")
                 cm("chats:appendMessage", {"chat_id": chat_id, "role": "assistant", "content": full})
@@ -2253,7 +1616,8 @@ def chat_stream():
             is_quiz = (p == "/quiz" or p == "quiz" or p.startswith("/quiz ")
                        or p.startswith("quiz ") or p.endswith(" quiz"))
             simple_prefixes = ("time", "weather", "news", "search", "wiki", "calc",
-                                "note", "notes", "translate", "pdf ", "save code", "calculate ")
+                                "note", "notes", "translate", "pdf ",
+                                "save code", "calculate ")
             simple_words = ["mausam", "samay", "khabar", "baj", "waqt", "dhundo",
                             "hello", "hi", "hey", "namaste", "bye", "thanks"]
             is_simple = p.startswith(simple_prefixes) or any(w in p for w in simple_words)
@@ -2291,15 +1655,13 @@ def chat_stream():
             full = f"Error: {e}"
             yield f"data: {json.dumps({'chunk': full})}\n\n".encode("utf-8")
         cm("chats:appendMessage", {"chat_id": chat_id, "role": "assistant", "content": full})
-        try:
-            _award_exp(user["_id"], "chat_message")
-            _check_badges(user["_id"])
-        except Exception:
-            pass
+        _award_exp(user["_id"], "chat_message")
+        _check_badges(user["_id"])
         yield f"data: {json.dumps({'done': True, 'full': full})}\n\n".encode("utf-8")
 
     return Response(stream_with_context(generate()), mimetype="text/event-stream",
-                    headers={"Cache-Control": "no-cache, no-transform", "X-Accel-Buffering": "no"})
+                    headers={"Cache-Control": "no-cache, no-transform",
+                             "X-Accel-Buffering": "no"})
 
 
 # ============================================================
@@ -2346,7 +1708,7 @@ def update_chat(cid):
 
 
 # ============================================================
-# SHARE / MULTI-USER
+# SHARE
 # ============================================================
 @app.route("/share", methods=["POST"])
 @require_login
@@ -2389,35 +1751,7 @@ def _render_shared_html(chat):
         msgs += (f'<div class="msg {cls}"><div class="role">{role_label}</div>'
                  f'<div class="content">{esc(m.get("content", ""))}</div></div>')
     return f'''<!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{esc(chat.get("title","Shared"))}</title>
-<style>body{{background:#000;color:#ececec;font-family:system-ui;margin:0;padding:20px}}.wrap{{max-width:780px;margin:0 auto}}.head{{border-bottom:1px solid #ffffff20;padding-bottom:16px;margin-bottom:24px;display:flex;justify-content:space-between}}.head h1{{font-size:20px;margin:0}}.head a{{color:#10a37f;text-decoration:none;font-weight:700}}.msg{{margin-bottom:20px;padding:14px 18px;border-radius:12px;background:#1a1a1a}}.msg.user{{background:#262626;margin-left:auto;max-width:80%}}.msg.bot{{background:#000;border:1px solid #ffffff10}}.role{{font-size:11px;text-transform:uppercase;color:#8e8e8e;margin-bottom:6px;font-weight:600}}.content{{white-space:pre-wrap;line-height:1.7}}.footer{{margin-top:40px;padding-top:20px;border-top:1px solid #ffffff20;text-align:center;color:#8e8e8e;font-size:13px}}.footer a{{color:#10a37f}}</style></head><body><div class="wrap"><div class="head"><h1>{esc(chat.get("title","Shared"))}</h1><a href="/">NOVEX AI →</a></div>{msgs}<div class="footer">Read-only · <a href="/">Try NOVEX AI</a></div></div></body></html>'''
-
-
-@app.route("/chats/<cid>/collaborators", methods=["GET"])
-@require_login
-def list_collaborators(cid):
-    items = cq("chats:listCollaborators", {"chat_id": cid}) or []
-    return jsonify({"owner": current_user(),
-                    "collaborators": [u["username"] for u in items]})
-
-
-@app.route("/chats/<cid>/collaborators", methods=["POST"])
-@require_login
-def add_chat_collaborator(cid):
-    data = request.get_json() or {}
-    username = (data.get("username") or "").strip().lower()
-    if not username:
-        return jsonify({"error": "Username chahiye"}), 400
-    result = cm("chats:addCollaborator", {"chat_id": cid, "username": username})
-    if result and result.get("error"):
-        return jsonify({"error": result["error"]}), 400
-    return jsonify({"ok": True})
-
-
-@app.route("/chats/<cid>/collaborators/<username>", methods=["DELETE"])
-@require_login
-def remove_chat_collaborator(cid, username):
-    cm("chats:removeCollaborator", {"chat_id": cid, "username": username.lower()})
-    return jsonify({"ok": True})
+<style>body{{background:#0d0d0d;color:#ececec;font-family:system-ui;margin:0;padding:20px}}.wrap{{max-width:780px;margin:0 auto}}.head{{border-bottom:1px solid #ffffff20;padding-bottom:16px;margin-bottom:24px;display:flex;justify-content:space-between}}.head h1{{font-size:20px;margin:0}}.head a{{color:#10a37f;text-decoration:none;font-weight:700}}.msg{{margin-bottom:20px;padding:14px 18px;border-radius:12px;background:#1a1a1a}}.msg.user{{background:#262626;margin-left:auto;max-width:80%}}.msg.bot{{background:#000;border:1px solid #ffffff10}}.role{{font-size:11px;text-transform:uppercase;color:#8e8e8e;margin-bottom:6px;font-weight:600}}.content{{white-space:pre-wrap;line-height:1.7}}.footer{{margin-top:40px;padding-top:20px;border-top:1px solid #ffffff20;text-align:center;color:#8e8e8e;font-size:13px}}.footer a{{color:#10a37f}}</style></head><body><div class="wrap"><div class="head"><h1>{esc(chat.get("title","Shared"))}</h1><a href="/">NOVEX AI →</a></div>{msgs}<div class="footer">Read-only · <a href="/">Try NOVEX AI</a></div></div></body></html>'''
 
 
 @app.route("/shared-with-me", methods=["GET"])
@@ -2428,7 +1762,7 @@ def shared_with_me():
 
 
 # ============================================================
-# TTS / VOICES / TRANSLATE / STATIC
+# TTS / TRANSLATE
 # ============================================================
 @app.route("/tts", methods=["POST"])
 @require_login
@@ -2454,39 +1788,6 @@ def tts():
         return jsonify({"ok": True, "url": f"/voice/{filename}", "voice": voice})
     except Exception as e:
         return jsonify({"error": f"TTS error: {e}"}), 500
-
-
-@app.route("/voices", methods=["GET"])
-@require_login
-def list_voices():
-    return jsonify({"voices": list(VOICES.keys()), "default": "hi-male"})
-
-
-LANGUAGES = [
-    {"code": "hi", "name": "हिन्दी", "en": "Hindi"},
-    {"code": "en", "name": "English", "en": "English"},
-    {"code": "bn", "name": "বাংলা", "en": "Bengali"},
-    {"code": "te", "name": "తెలుగు", "en": "Telugu"},
-    {"code": "mr", "name": "मराठी", "en": "Marathi"},
-    {"code": "ta", "name": "தமிழ்", "en": "Tamil"},
-    {"code": "ur", "name": "اردو", "en": "Urdu"},
-    {"code": "gu", "name": "ગુજરાતી", "en": "Gujarati"},
-    {"code": "kn", "name": "ಕನ್ನಡ", "en": "Kannada"},
-    {"code": "ml", "name": "മലയാളം", "en": "Malayalam"},
-    {"code": "pa", "name": "ਪੰਜਾਬੀ", "en": "Punjabi"},
-    {"code": "es", "name": "Español", "en": "Spanish"},
-    {"code": "fr", "name": "Français", "en": "French"},
-    {"code": "de", "name": "Deutsch", "en": "German"},
-    {"code": "ar", "name": "العربية", "en": "Arabic"},
-    {"code": "zh-CN", "name": "中文(简)", "en": "Chinese"},
-    {"code": "ja", "name": "日本語", "en": "Japanese"},
-    {"code": "ko", "name": "한국어", "en": "Korean"},
-]
-
-
-@app.route("/languages-list", methods=["GET"])
-def languages_list():
-    return jsonify({"languages": LANGUAGES})
 
 
 @app.route("/translate", methods=["POST"])
@@ -2529,13 +1830,15 @@ def themes_css():
     try:
         return send_from_directory(".", "themes.css")
     except Exception:
-        return ("/* themes.css not found */", 404, {"Content-Type": "text/css"})
+        return ("/* not found */", 404, {"Content-Type": "text/css"})
+
+
 @app.route("/themes-extra.css")
 def themes_extra_css():
     try:
         return send_from_directory(".", "themes-extra.css")
     except Exception:
-        return ("/* themes-extra.css not found */", 404, {"Content-Type": "text/css"})
+        return ("/* not found */", 404, {"Content-Type": "text/css"})
 
 
 @app.route("/ui-modes.css")
@@ -2543,7 +1846,7 @@ def ui_modes_css():
     try:
         return send_from_directory(".", "ui-modes.css")
     except Exception:
-        return ("/* ui-modes.css not found */", 404, {"Content-Type": "text/css"})
+        return ("/* not found */", 404, {"Content-Type": "text/css"})
 
 
 @app.route("/ui-modes.js")
@@ -2551,11 +1854,7 @@ def ui_modes_js():
     try:
         return send_from_directory(".", "ui-modes.js")
     except Exception:
-        return ("/* ui-modes.js not found */", 404, {"Content-Type": "application/javascript"})
-
-@app.route("/image/<path:filename>")
-def image(filename):
-    return send_from_directory(".", filename)
+        return ("/* not found */", 404, {"Content-Type": "application/javascript"})
 
 
 @app.route("/voice/<path:filename>")
@@ -2576,9 +1875,11 @@ def health():
     except Exception:
         convex_ok = False
     return jsonify({
-        "ok": True, "service": "novex-ai", "version": "7.0",
-        "totp": TOTP_AVAILABLE, "brevo": bool(BREVO_API_KEY),
+        "ok": True, "service": "novex-ai", "version": "8.0",
+        "totp": TOTP_AVAILABLE,
+        "brevo": bool(BREVO_API_KEY),
         "convex": convex_ok,
+        "google_oauth": bool(GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET),
         "search": {
             "serper": bool(os.getenv("SERPER_API_KEY")),
             "ddgs": True,
@@ -2596,7 +1897,9 @@ def health():
             "batch1": True,
             "quiz_v2": True,
             "search_realtime": True,
-            "themes": 32,
+            "themes": 52,
+            "ui_modes": 5,
+            "google_login": bool(GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET),
         },
     })
 
@@ -2611,13 +1914,13 @@ if __name__ == "__main__":
     PORT = int(os.getenv("PORT", 10000))
     HOST = os.getenv("HOST", "0.0.0.0")
     print("=" * 60)
-    print("  NOVEX AI v7.0")
+    print("  NOVEX AI v8.0")
     print(f"  URL: http://{HOST}:{PORT}")
     print(f"  Convex: {os.getenv('CONVEX_URL', 'NOT SET')}")
-    print(f"  Brevo: {'✓' if BREVO_API_KEY else '✗ (console fallback)'}")
+    print(f"  Brevo: {'✓' if BREVO_API_KEY else '✗'}")
     print(f"  2FA: {'✓' if TOTP_AVAILABLE else '✗'}")
+    print(f"  Google OAuth: {'✓' if GOOGLE_CLIENT_ID else '✗'}")
     print(f"  Search: Serper {'✓' if os.getenv('SERPER_API_KEY') else '✗'} + DDGS ✓")
-    print(f"  Quiz: v2 (categories, streaks, speed bonus)")
-    print(f"  Themes: 32 (including 11 realistic)")
+    print(f"  Themes: 52 · UI Modes: 5")
     print("=" * 60)
     serve(app, host=HOST, port=PORT, threads=16, send_bytes=1, channel_timeout=300)
