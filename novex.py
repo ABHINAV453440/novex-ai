@@ -1,12 +1,14 @@
 """
-NOVEX AI — Backend Engine v8.0
+NOVEX AI — Backend Engine v8.1 (UPGRADED)
 ChatGPT-quality replies + All features
+Improvements: thread-safety, retry, LRU, better search, robust JSON,
+              expanded lingua, fixed bugs, streaming timeouts.
 """
 from __future__ import annotations
 import base64, datetime, hashlib, json as _json, os, random as _random
-import re, time as _time, uuid
-from collections import defaultdict
-from threading import Lock
+import re, time as _time, uuid, threading
+from collections import defaultdict, OrderedDict
+from threading import Lock, RLock
 from urllib.parse import quote
 import xml.etree.ElementTree as ET
 
@@ -16,7 +18,9 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-# ============ CONFIG ============
+# ============================================================
+# CONFIG
+# ============================================================
 GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
 CONVEX_URL = (os.getenv("CONVEX_URL") or "").rstrip("/")
 
@@ -26,11 +30,21 @@ SEARCH_MAX_RESULTS = int(os.getenv("SEARCH_MAX_RESULTS", "6"))
 SEARCH_REGION = os.getenv("SEARCH_REGION", "in-en")
 SEARCH_SAFE = os.getenv("SEARCH_SAFE", "true").lower() == "true"
 
-GROQ_MODELS = ["openai/gpt-oss-120b", "openai/gpt-oss-20b", "llama-3.3-70b-versatile"]
+GROQ_MODELS = ["openai/gpt-oss-120b", "openai/gpt-oss-20b",
+               "llama-3.3-70b-versatile", "llama-3.1-8b-instant"]
 DEFAULT_MODEL = "groq:openai/gpt-oss-120b"
 _ACTIVE_MODEL = DEFAULT_MODEL
 
 IST = datetime.timezone(datetime.timedelta(hours=5, minutes=30))
+
+# Retry config
+GROQ_MAX_RETRIES = int(os.getenv("GROQ_MAX_RETRIES", "2"))
+GROQ_RETRY_BACKOFF = float(os.getenv("GROQ_RETRY_BACKOFF", "0.8"))
+GROQ_TIMEOUT = int(os.getenv("GROQ_TIMEOUT", "60"))
+
+# Session config
+MAX_HISTORY = int(os.getenv("MAX_HISTORY", "20"))
+MAX_SESSIONS = int(os.getenv("MAX_SESSIONS", "500"))  # LRU cap
 
 # ============================================================
 # 🌟 CHATGPT-LEVEL SYSTEM PROMPTS
@@ -182,46 +196,116 @@ End with a thought-provoking line.""",
 }
 
 # ============================================================
-# PER-SESSION STATE
+# PER-SESSION STATE (LRU capped)
 # ============================================================
-_HISTORY_LOCK = Lock()
-_chat_history: dict[str, list] = defaultdict(list)
-_last_code: dict[str, str] = defaultdict(str)
-_current_mode: dict[str, str] = defaultdict(lambda: "default")
-_quiz_state: dict[str, dict] = defaultdict(lambda: {
-    "active": False, "topic": "", "difficulty": "medium",
-    "questions": [], "current_index": 0, "score": 0,
-    "correct": 0, "wrong": 0, "user_answers": [],
-    "streak": 0, "max_streak": 0, "time_left": 30,
-    "hint_used": False, "question_start": 0,
-})
-MAX_HISTORY = 20
+_HISTORY_LOCK = RLock()
+_chat_history: "OrderedDict[str, list]" = OrderedDict()
+_last_code: "OrderedDict[str, str]" = OrderedDict()
+_current_mode: "OrderedDict[str, str]" = OrderedDict()
+_quiz_state: "OrderedDict[str, dict]" = OrderedDict()
+
+def _default_quiz():
+    return {
+        "active": False, "topic": "", "difficulty": "medium",
+        "questions": [], "current_index": 0, "score": 0,
+        "correct": 0, "wrong": 0, "user_answers": [],
+        "streak": 0, "max_streak": 0, "time_left": 30,
+        "hint_used": False, "hint_available": 1,
+        "xp_multiplier": 1.0, "question_start": 0,
+    }
+
+def _lru_touch(d, key, default=None):
+    """Touch key in OrderedDict for LRU. Creates if missing."""
+    if key in d:
+        d.move_to_end(key)
+        return d[key]
+    if default is not None:
+        d[key] = default
+        d.move_to_end(key)
+        # Evict oldest
+        while len(d) > MAX_SESSIONS:
+            d.popitem(last=False)
+        return d[key]
+    return None
+
+def _get_quiz(sid):
+    with _HISTORY_LOCK:
+        if sid in _quiz_state:
+            _quiz_state.move_to_end(sid)
+            return _quiz_state[sid]
+        _quiz_state[sid] = _default_quiz()
+        while len(_quiz_state) > MAX_SESSIONS:
+            _quiz_state.popitem(last=False)
+        return _quiz_state[sid]
+
+def clear_session(sid):
+    """Clear all session state for a given id."""
+    with _HISTORY_LOCK:
+        _chat_history.pop(sid, None)
+        _last_code.pop(sid, None)
+        _current_mode.pop(sid, None)
+        _quiz_state.pop(sid, None)
+
+def get_session_info():
+    with _HISTORY_LOCK:
+        return {
+            "sessions": len(_chat_history),
+            "quizzes_active": sum(1 for q in _quiz_state.values() if q.get("active")),
+            "total_quizzes": len(_quiz_state),
+            "max_sessions": MAX_SESSIONS,
+        }
+
 _on_usage = None
 
-
 # ============================================================
-# SEARCH — Serper + DDGS
+# SEARCH — Serper + DDGS (thread-safe cache)
 # ============================================================
-_SEARCH_CACHE = {}
-_SEARCH_CACHE_TTL = 300
+_SEARCH_CACHE: "OrderedDict[str, tuple]" = OrderedDict()
+_SEARCH_CACHE_TTL = int(os.getenv("SEARCH_CACHE_TTL", "300"))
+_SEARCH_CACHE_MAX = int(os.getenv("SEARCH_CACHE_MAX", "500"))
+_SEARCH_LOCK = Lock()
 _last_search_provider = ""
 
 
 def _cache_get(key):
-    entry = _SEARCH_CACHE.get(key)
-    if not entry:
-        return None
-    ts, data = entry
-    if _time.time() - ts > _SEARCH_CACHE_TTL:
-        _SEARCH_CACHE.pop(key, None)
-        return None
-    return data
+    with _SEARCH_LOCK:
+        entry = _SEARCH_CACHE.get(key)
+        if not entry:
+            return None
+        ts, data = entry
+        if _time.time() - ts > _SEARCH_CACHE_TTL:
+            _SEARCH_CACHE.pop(key, None)
+            return None
+        _SEARCH_CACHE.move_to_end(key)
+        return data
 
 
 def _cache_set(key, data):
-    if len(_SEARCH_CACHE) > 500:
-        _SEARCH_CACHE.clear()
-    _SEARCH_CACHE[key] = (_time.time(), data)
+    with _SEARCH_LOCK:
+        _SEARCH_CACHE[key] = (_time.time(), data)
+        _SEARCH_CACHE.move_to_end(key)
+        while len(_SEARCH_CACHE) > _SEARCH_CACHE_MAX:
+            _SEARCH_CACHE.popitem(last=False)
+
+
+def _dedupe_results(results):
+    """Dedupe by URL, keep first."""
+    seen = set()
+    out = []
+    for r in results:
+        url = (r.get("url") or "").strip().rstrip("/")
+        if not url or url in seen:
+            continue
+        seen.add(url)
+        out.append(r)
+    return out
+
+
+def _clean_snippet(s):
+    if not s:
+        return ""
+    s = re.sub(r"\s+", " ", str(s)).strip()
+    return s[:400]
 
 
 def _search_serper(query, max_results=6):
@@ -231,36 +315,46 @@ def _search_serper(query, max_results=6):
         res = requests.post(
             "https://google.serper.dev/search",
             headers={"X-API-KEY": SERPER_API_KEY, "Content-Type": "application/json"},
-            json={"q": query, "num": max_results,
-                  "gl": SEARCH_REGION.split("-")[-1] if "-" in SEARCH_REGION else "in",
-                  "hl": "en"},
-            timeout=12)
+            json={
+                "q": query,
+                "num": max_results,
+                "gl": SEARCH_REGION.split("-")[-1] if "-" in SEARCH_REGION else "in",
+                "hl": "en",
+            },
+            timeout=12,
+        )
         if res.status_code != 200:
             return []
         data = res.json()
         out = []
         kg = data.get("knowledgeGraph", {})
         if kg and kg.get("title"):
-            out.append({"title": kg.get("title", "")[:200],
-                        "url": kg.get("descriptionLink") or kg.get("website", ""),
-                        "snippet": (kg.get("description") or "")[:400],
-                        "source": "google-kg"})
+            out.append({
+                "title": kg.get("title", "")[:200],
+                "url": kg.get("descriptionLink") or kg.get("website", ""),
+                "snippet": _clean_snippet(kg.get("description") or ""),
+                "source": "google-kg",
+            })
         ab = data.get("answerBox", {})
         if ab:
             text = ab.get("answer") or ab.get("snippet") or ""
             if text:
-                out.insert(0, {"title": ab.get("title", "Quick Answer"),
-                               "url": ab.get("link", ""),
-                               "snippet": str(text)[:400],
-                               "source": "google-answer"})
+                out.insert(0, {
+                    "title": ab.get("title", "Quick Answer"),
+                    "url": ab.get("link", ""),
+                    "snippet": _clean_snippet(text),
+                    "source": "google-answer",
+                })
         for r in data.get("organic", [])[:max_results]:
             url = (r.get("link") or "").strip()
             if url:
-                out.append({"title": (r.get("title") or "").strip()[:200],
-                            "url": url,
-                            "snippet": (r.get("snippet") or "").strip()[:400],
-                            "source": "google"})
-        return out[:max_results]
+                out.append({
+                    "title": (r.get("title") or "").strip()[:200],
+                    "url": url,
+                    "snippet": _clean_snippet(r.get("snippet") or ""),
+                    "source": "google",
+                })
+        return _dedupe_results(out)[:max_results]
     except Exception as e:
         print(f"[search:serper] {e}", flush=True)
         return []
@@ -269,18 +363,22 @@ def _search_serper(query, max_results=6):
 def _search_ddgs(query, max_results=6):
     try:
         with DDGS() as ddgs:
-            results = list(ddgs.text(query, max_results=max_results,
-                                     region=SEARCH_REGION,
-                                     safesearch="moderate" if SEARCH_SAFE else "off"))
+            results = list(ddgs.text(
+                query, max_results=max_results,
+                region=SEARCH_REGION,
+                safesearch="moderate" if SEARCH_SAFE else "off",
+            ))
         out = []
         for r in results:
             url = (r.get("href") or r.get("url") or "").strip()
             if url:
-                out.append({"title": (r.get("title") or "").strip()[:200],
-                            "url": url,
-                            "snippet": (r.get("body") or "").strip()[:400],
-                            "source": "duckduckgo"})
-        return out
+                out.append({
+                    "title": (r.get("title") or "").strip()[:200],
+                    "url": url,
+                    "snippet": _clean_snippet(r.get("body") or ""),
+                    "source": "duckduckgo",
+                })
+        return _dedupe_results(out)
     except Exception as e:
         print(f"[search:ddgs] {e}", flush=True)
         return []
@@ -291,10 +389,13 @@ def web_search_structured(query, max_results=None):
     if not query or not query.strip():
         return []
     max_results = max_results or SEARCH_MAX_RESULTS
-    cache_key = hashlib.md5(f"{query}:{max_results}:{SEARCH_PROVIDER}".encode()).hexdigest()
+    cache_key = hashlib.md5(
+        f"{query}:{max_results}:{SEARCH_PROVIDER}".encode()
+    ).hexdigest()
     cached = _cache_get(cache_key)
-    if cached:
+    if cached is not None:
         return cached
+
     order = ["ddgs", "serper"] if SEARCH_PROVIDER == "ddgs" else ["serper", "ddgs"]
     results = []
     used = None
@@ -317,11 +418,11 @@ def format_search_results_with_citations(query, results):
     out = f"### 🔍 Search: {query}\n\n"
     for i, r in enumerate(results, 1):
         out += f"**[{i}] {r.get('title', 'Untitled')}**\n"
-        if r.get('snippet'):
+        if r.get("snippet"):
             out += f"{r['snippet']}\n\n"
-        if r.get('url'):
+        if r.get("url"):
             out += f"🔗 [{r['url']}]({r['url']})"
-            if r.get('source'):
+            if r.get("source"):
                 out += f" · `{r['source']}`"
             out += "\n\n---\n\n"
     out += f"_📊 {len(results)} sources via {_last_search_provider}_\n"
@@ -335,7 +436,9 @@ def web_search(query):
 def get_news(topic=None, max_items=5):
     try:
         with DDGS() as ddgs:
-            news = list(ddgs.news(topic or "India", max_results=max_items, region=SEARCH_REGION))
+            news = list(ddgs.news(
+                topic or "India", max_results=max_items, region=SEARCH_REGION,
+            ))
         if not news:
             return f"**News** ({topic or 'India'}): koi result nahi mila."
         out = f"### 📰 Latest News — {topic or 'India'}\n\n"
@@ -361,26 +464,51 @@ def get_news(topic=None, max_items=5):
 
 
 # ============================================================
-# GROQ CALL
+# GROQ CALL (with retry)
 # ============================================================
-def _groq_call(prompt, temp=0.7, timeout=60, model=None, system=None):
+def _groq_call(prompt, temp=0.7, timeout=None, model=None, system=None,
+               max_tokens=None):
     if not GROQ_API_KEY:
         return None
     msgs = []
     if system:
         msgs.append({"role": "system", "content": system})
     msgs.append({"role": "user", "content": prompt})
-    try:
-        res = requests.post(
-            "https://api.groq.com/openai/v1/chat/completions",
-            headers={"Authorization": f"Bearer {GROQ_API_KEY}",
-                     "Content-Type": "application/json"},
-            json={"model": model or "openai/gpt-oss-20b", "messages": msgs, "temperature": temp},
-            timeout=timeout)
-        if res.status_code == 200:
-            return res.json()["choices"][0]["message"]["content"]
-    except Exception as e:
-        print(f"[groq_call] {e}", flush=True)
+
+    payload = {
+        "model": model or "openai/gpt-oss-20b",
+        "messages": msgs,
+        "temperature": temp,
+    }
+    if max_tokens:
+        payload["max_tokens"] = max_tokens
+
+    url = "https://api.groq.com/openai/v1/chat/completions"
+    headers = {
+        "Authorization": f"Bearer {GROQ_API_KEY}",
+        "Content-Type": "application/json",
+    }
+    last_err = None
+    for attempt in range(GROQ_MAX_RETRIES + 1):
+        try:
+            res = requests.post(url, headers=headers, json=payload,
+                                timeout=timeout or GROQ_TIMEOUT)
+            if res.status_code == 200:
+                return res.json()["choices"][0]["message"]["content"]
+            if res.status_code in (429, 500, 502, 503, 504):
+                last_err = f"HTTP {res.status_code}"
+                _time.sleep(GROQ_RETRY_BACKOFF * (attempt + 1))
+                continue
+            last_err = f"HTTP {res.status_code}: {res.text[:120]}"
+            break
+        except requests.Timeout:
+            last_err = "timeout"
+            _time.sleep(GROQ_RETRY_BACKOFF * (attempt + 1))
+        except Exception as e:
+            last_err = str(e)
+            _time.sleep(GROQ_RETRY_BACKOFF * (attempt + 1))
+    if last_err:
+        print(f"[groq_call] {last_err}", flush=True)
     return None
 
 
@@ -422,27 +550,45 @@ def solve_image(image_path, question="", language="hinglish"):
     ext = os.path.splitext(image_path)[1].lower().lstrip(".")
     mime = {"jpg": "image/jpeg", "jpeg": "image/jpeg", "png": "image/png",
             "webp": "image/webp", "gif": "image/gif"}.get(ext, "image/jpeg")
-    system = ("You are NOVEX in DOUBT SOLVER mode.\n\n"
-              "RULES:\n1. Describe image (1 line).\n2. Identify subject.\n"
-              "3. Solve STEP-BY-STEP.\n4. Show formulas.\n5. Final answer in bold.\n"
-              "6. Add similar practice problem.\n"
-              f"7. Language: {language}.\n8. Markdown.")
+
+    system = (
+        "You are NOVEX in DOUBT SOLVER mode.\n\n"
+        "RULES:\n1. Describe image (1 line).\n2. Identify subject.\n"
+        "3. Solve STEP-BY-STEP.\n4. Show formulas.\n5. Final answer in bold.\n"
+        "6. Add similar practice problem.\n"
+        f"7. Language: {language}.\n8. Markdown."
+    )
     user_text = question.strip() or "Solve this step-by-step."
     url = "https://api.groq.com/openai/v1/chat/completions"
-    headers = {"Authorization": f"Bearer {GROQ_API_KEY}", "Content-Type": "application/json"}
+    headers = {"Authorization": f"Bearer {GROQ_API_KEY}",
+               "Content-Type": "application/json"}
+
     for model in VISION_MODELS:
-        try:
-            payload = {"model": model, "messages": [
-                {"role": "system", "content": system},
-                {"role": "user", "content": [
-                    {"type": "text", "text": user_text},
-                    {"type": "image_url", "image_url": {"url": f"data:{mime};base64,{b64}"}},
-                ]}], "temperature": 0.4, "max_tokens": 2048}
-            r = requests.post(url, headers=headers, json=payload, timeout=90)
-            if r.status_code == 200:
-                return r.json()["choices"][0]["message"]["content"]
-        except Exception as e:
-            print(f"[vision:{model}] {e}", flush=True)
+        for attempt in range(GROQ_MAX_RETRIES + 1):
+            try:
+                payload = {
+                    "model": model,
+                    "messages": [
+                        {"role": "system", "content": system},
+                        {"role": "user", "content": [
+                            {"type": "text", "text": user_text},
+                            {"type": "image_url",
+                             "image_url": {"url": f"data:{mime};base64,{b64}"}},
+                        ]},
+                    ],
+                    "temperature": 0.4,
+                    "max_tokens": 2048,
+                }
+                r = requests.post(url, headers=headers, json=payload, timeout=90)
+                if r.status_code == 200:
+                    return r.json()["choices"][0]["message"]["content"]
+                if r.status_code in (429, 500, 503):
+                    _time.sleep(GROQ_RETRY_BACKOFF * (attempt + 1))
+                    continue
+                break
+            except Exception as e:
+                print(f"[vision:{model}] {e}", flush=True)
+                _time.sleep(GROQ_RETRY_BACKOFF * (attempt + 1))
     return "⚠️ Vision model unavailable. Try again."
 
 
@@ -466,10 +612,14 @@ def srs_next(ease_factor=2.5, interval_days=0, repetitions=0, rating=2):
     if ef < 1.3:
         ef = 1.3
     now_ms = int(datetime.datetime.now().timestamp() * 1000)
-    return {"ease_factor": round(ef, 2), "interval_days": interval_days,
-            "repetitions": repetitions,
-            "next_review": now_ms + interval_days * 86400000,
-            "last_rating": rating, "last_reviewed": now_ms}
+    return {
+        "ease_factor": round(ef, 2),
+        "interval_days": interval_days,
+        "repetitions": repetitions,
+        "next_review": now_ms + interval_days * 86400000,
+        "last_rating": rating,
+        "last_reviewed": now_ms,
+    }
 
 
 # ============================================================
@@ -516,11 +666,16 @@ def calculate_level(exp):
             next_lvl = LEVELS[i + 1] if i + 1 < len(LEVELS) else None
         else:
             break
-    result = {"level": current[1], "icon": current[2], "exp": exp, "level_start": current[0]}
+    result = {
+        "level": current[1], "icon": current[2],
+        "exp": exp, "level_start": current[0],
+    }
     if next_lvl:
         result["next_level"] = next_lvl[1]
         result["next_at"] = next_lvl[0]
-        result["progress_pct"] = round(((exp - current[0]) / (next_lvl[0] - current[0])) * 100)
+        result["progress_pct"] = round(
+            ((exp - current[0]) / (next_lvl[0] - current[0])) * 100
+        )
     else:
         result["next_level"] = None
         result["next_at"] = None
@@ -528,14 +683,17 @@ def calculate_level(exp):
     return result
 
 
-def build_system_prompt(mode="default", custom_instructions="", user_personas=None, memory=None):
+def build_system_prompt(mode="default", custom_instructions="",
+                        user_personas=None, memory=None):
     base = PERSONAS.get(mode, PERSONAS["default"])
     if user_personas and mode in user_personas:
         p = user_personas[mode]
         base = f"{p.get('prompt', base)}\n\n(You are acting as '{p.get('name', mode)}'.)"
     parts = [base]
     if memory:
-        facts = "\n".join(f"- {m.get('fact', '')}" for m in memory[-30:] if m.get("fact"))
+        facts = "\n".join(
+            f"- {m.get('fact', '')}" for m in memory[-30:] if m.get("fact")
+        )
         if facts:
             parts.append(f"\n\nWHAT YOU REMEMBER:\n{facts}\n\nUse naturally.")
     if custom_instructions and custom_instructions.strip():
@@ -546,117 +704,170 @@ def build_system_prompt(mode="default", custom_instructions="", user_personas=No
 def _strip_json_fence(s):
     s = s.strip()
     if s.startswith("```"):
-        s = re.sub(r"^```(?:json)?\s*", "", s)
+        s = re.sub(r"^```(?:json|markdown|md)?\s*", "", s)
         s = re.sub(r"\s*```$", "", s)
     return s
 
 
 def _sanitize_json(s):
-    s = re.sub(r',(\s*[}\]])', r'\1', s)
-    s = s.replace('"', '"').replace('"', '"').replace(''', "'").replace(''', "'")
-    s = re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f]', '', s)
+    # Remove trailing commas
+    s = re.sub(r",(\s*[}\]])", r"\1", s)
+    # Smart quotes
+    s = s.replace("\u201c", '"').replace("\u201d", '"')
+    s = s.replace("\u2018", "'").replace("\u2019", "'")
+    # Control chars
+    s = re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f]", "", s)
     return s
 
 
+def _extract_json(raw, kind="object"):
+    """Robust JSON extraction with repair fallback."""
+    if not raw:
+        return None
+    raw = _strip_json_fence(raw)
+    if kind == "array":
+        s, e = raw.find("["), raw.rfind("]")
+    else:
+        s, e = raw.find("{"), raw.rfind("}")
+    if s == -1 or e == -1 or e <= s:
+        return None
+    candidate = _sanitize_json(raw[s:e + 1])
+    try:
+        return _json.loads(candidate)
+    except Exception:
+        pass
+    # Fallback: try fixing common issues
+    candidate = re.sub(r"(?<!\\)\n", " ", candidate)  # newlines inside strings
+    candidate = re.sub(r",\s*,", ",", candidate)
+    try:
+        return _json.loads(candidate)
+    except Exception:
+        return None
+
+
 # ============================================================
-# MEMORY
+# MEMORY (improved dedup + priority)
 # ============================================================
 def extract_facts(text):
     if not text or len(text) < 30:
         return []
-    prompt = ("Extract STABLE personal facts about the user.\n"
-              "Rules: name, job, city, preferences, goals, skills only.\n"
-              "Max 5 facts. Return ONLY JSON array. NO markdown.\n\n"
-              f"Text:\n{text[:4000]}")
+    prompt = (
+        "Extract STABLE personal facts about the user.\n"
+        "Rules: name, job, city, preferences, goals, skills only.\n"
+        "Max 5 facts. Return ONLY JSON array. NO markdown.\n\n"
+        f"Text:\n{text[:4000]}"
+    )
     result = _groq_call(prompt, temp=0.3)
     if not result:
         return []
-    result = _strip_json_fence(result)
-    s, e = result.find("["), result.rfind("]")
-    if s == -1 or e == -1:
+    arr = _extract_json(result, kind="array")
+    if not arr or not isinstance(arr, list):
         return []
-    try:
-        arr = _json.loads(_sanitize_json(result[s:e+1]))
-        return [str(x).strip() for x in arr if str(x).strip() and len(str(x)) < 200]
-    except Exception:
-        return []
+    # Clean + dedupe
+    seen = set()
+    out = []
+    for x in arr:
+        s = str(x).strip()[:200]
+        key = s.lower()
+        if not s or key in seen:
+            continue
+        seen.add(key)
+        out.append(s)
+    return out[:5]
 
 
 # ============================================================
 # FLASHCARDS
 # ============================================================
 def generate_flashcards(source_text, count=10):
-    prompt = (f"Generate exactly {count} flashcards.\n\n"
-              'Return ONLY JSON:\n'
-              '{"title": "...", "cards": [{"front": "...", "back": "..."}]}\n\n'
-              f"Rules: {count} cards, match source language, NO markdown, NO trailing commas.\n\n"
-              f"Content:\n{source_text[:6000]}")
+    prompt = (
+        f"Generate exactly {count} flashcards.\n\n"
+        'Return ONLY JSON:\n'
+        '{"title": "...", "cards": [{"front": "...", "back": "..."}]}\n\n'
+        f"Rules: {count} cards, match source language, NO markdown, NO trailing commas.\n\n"
+        f"Content:\n{source_text[:6000]}"
+    )
     result = _groq_call(prompt, temp=0.5, timeout=90)
     if not result:
         return {"error": "Generation failed"}
-    result = _strip_json_fence(result)
-    s, e = result.find("{"), result.rfind("}")
-    if s == -1 or e == -1:
+    data = _extract_json(result, kind="object")
+    if not data:
         return {"error": "Bad format"}
-    try:
-        data = _json.loads(_sanitize_json(result[s:e+1]))
-    except Exception as ex:
-        return {"error": f"Parse failed: {ex}"}
     cleaned = []
+    seen = set()
     for c in data.get("cards", [])[:count]:
         if not isinstance(c, dict):
             continue
         front = str(c.get("front", "")).strip()[:300]
         back = str(c.get("back", "")).strip()[:800]
-        if front and back:
+        key = front.lower()
+        if front and back and key not in seen:
+            seen.add(key)
             cleaned.append({"front": front, "back": back})
     if not cleaned:
         return {"error": "No valid cards"}
-    return {"ok": True, "title": str(data.get("title", "Flashcards"))[:60], "cards": cleaned}
+    return {
+        "ok": True,
+        "title": str(data.get("title", "Flashcards"))[:60],
+        "cards": cleaned,
+    }
 
 
 # ============================================================
 # DOCUMENT
 # ============================================================
 def generate_document(topic, style="essay", length="medium", language="hindi"):
-    length_map = {"short": "300-500 words, 3 sections",
-                  "medium": "700-1200 words, 4-5 sections",
-                  "long": "1500-2500 words, 6-8 sections"}
-    style_map = {"essay": "formal essay", "blog": "casual blog", "report": "structured report",
-                 "story": "narrative story", "notes": "study notes"}
-    lang_name = {"hindi": "Hindi", "english": "English", "hinglish": "Hinglish"}.get(language, "Hindi")
+    length_map = {
+        "short": "300-500 words, 3 sections",
+        "medium": "700-1200 words, 4-5 sections",
+        "long": "1500-2500 words, 6-8 sections",
+    }
+    style_map = {
+        "essay": "formal essay", "blog": "casual blog",
+        "report": "structured report", "story": "narrative story",
+        "notes": "study notes",
+    }
+    lang_name = {"hindi": "Hindi", "english": "English",
+                 "hinglish": "Hinglish"}.get(language, "Hindi")
     length_desc = length_map.get(length, length_map["medium"])
     style_desc = style_map.get(style, style_map["essay"])
-    outline_prompt = (f"Create outline for {style_desc} on: **{topic}**\n"
-                      f"Length: {length_desc}\nLanguage: {lang_name}\n\n"
-                      'Return ONLY JSON: {"title": "...", "outline": ["Section 1", ...]}\n')
+
+    outline_prompt = (
+        f"Create outline for {style_desc} on: **{topic}**\n"
+        f"Length: {length_desc}\nLanguage: {lang_name}\n\n"
+        'Return ONLY JSON: {"title": "...", "outline": ["Section 1", ...]}\n'
+    )
     outline_result = _groq_call(outline_prompt, temp=0.7)
     if not outline_result:
         return {"error": "Outline failed"}
-    outline_result = _strip_json_fence(outline_result)
-    s, e = outline_result.find("{"), outline_result.rfind("}")
-    if s == -1 or e == -1:
+    outline_data = _extract_json(outline_result, kind="object")
+    if not outline_data:
         return {"error": "Bad outline"}
-    try:
-        outline_data = _json.loads(_sanitize_json(outline_result[s:e+1]))
-    except Exception:
-        return {"error": "Parse failed"}
+
     title = str(outline_data.get("title", topic))[:100]
     outline = [str(x).strip() for x in outline_data.get("outline", []) if str(x).strip()]
     if not outline:
         return {"error": "No sections"}
+
     full = f"# {title}\n\n"
     for i, section in enumerate(outline, 1):
-        sp = (f"Write section {i} of {style_desc}.\nTitle: {title}\nSection: {section}\n"
-              f"Language: {lang_name}\n\nRules: 100-350 words, markdown.\n\n"
-              f"Context:\n{full[-1500:]}\n\nONLY this section.")
+        sp = (
+            f"Write section {i} of {style_desc}.\n"
+            f"Title: {title}\nSection: {section}\n"
+            f"Language: {lang_name}\n\n"
+            "Rules: 100-350 words, markdown.\n\n"
+            f"Context:\n{full[-1500:]}\n\nONLY this section."
+        )
         sc = _groq_call(sp, temp=0.75, timeout=90)
         full += (sc.strip() if sc else f"## {section}\n\n_Failed_") + "\n\n"
-    return {"ok": True, "title": title, "outline": outline, "content": full.strip()}
+    return {
+        "ok": True, "title": title,
+        "outline": outline, "content": full.strip(),
+    }
 
 
 # ============================================================
-# REMINDER
+# REMINDER (improved parsing)
 # ============================================================
 def parse_reminder(text):
     t = text.lower().strip()
@@ -671,7 +882,8 @@ def parse_reminder(text):
         day_offset = 2
     elif "kal" in t or "कल" in t:
         day_offset = 1
-    m = re.search(r'(\d{1,2}):(\d{2})\s*(am|pm)?', t)
+
+    m = re.search(r"(\d{1,2}):(\d{2})\s*(am|pm)?", t)
     if m:
         hour, minute = int(m.group(1)), int(m.group(2))
         ampm = m.group(3)
@@ -681,7 +893,7 @@ def parse_reminder(text):
             hour = 0
         target = target.replace(hour=hour, minute=minute)
     else:
-        m = re.search(r'(\d{1,2})\s*(baje|bje|बजे|o.?clock)', t)
+        m = re.search(r"(\d{1,2})\s*(baje|bje|बजे|o.?clock)", t)
         if not m:
             return None
         hour = int(m.group(1))
@@ -694,14 +906,15 @@ def parse_reminder(text):
     target += datetime.timedelta(days=day_offset)
     if target <= now:
         target += datetime.timedelta(days=1)
+
     task = text
     for tr in triggers:
         task = re.sub(rf"{tr}[ao]?\s*", "", task, flags=re.IGNORECASE)
-    task = re.sub(r'(\d{1,2}):(\d{2})\s*(am|pm)?', '', task)
-    task = re.sub(r'\d{1,2}\s*(baje|bje|बजे|o.?clock)', '', task)
-    task = re.sub(r'\b(kal|parso|aaj|कल|परसों|आज)\b', '', task)
-    task = re.sub(r'\b(ki|that|to|ko|को|कि|है|hai)\b', '', task)
-    task = re.sub(r'\s+', ' ', task).strip(" ,.-:")
+    task = re.sub(r"(\d{1,2}):(\d{2})\s*(am|pm)?", "", task)
+    task = re.sub(r"\d{1,2}\s*(baje|bje|बजे|o.?clock)", "", task)
+    task = re.sub(r"\b(kal|parso|aaj|कल|परसों|आज)\b", "", task)
+    task = re.sub(r"\b(ki|that|to|ko|को|कि|है|hai)\b", "", task)
+    task = re.sub(r"\s+", " ", task).strip(" ,.-:")
     return {"text": task or "Reminder", "when": target.isoformat()}
 
 
@@ -710,8 +923,10 @@ def parse_reminder(text):
 # ============================================================
 def get_time():
     now = datetime.datetime.now(IST)
-    days_hi = ["Somvar", "Mangalvar", "Budhvar", "Guruvar", "Shukravar", "Shanivar", "Ravivar"]
-    return f"Abhi **{now.strftime('%I:%M %p')}**, {days_hi[now.weekday()]}, {now.day}/{now.month}/{now.year} (IST) ⏰"
+    days_hi = ["Somvar", "Mangalvar", "Budhvar", "Guruvar",
+               "Shukravar", "Shanivar", "Ravivar"]
+    return (f"Abhi **{now.strftime('%I:%M %p')}**, "
+            f"{days_hi[now.weekday()]}, {now.day}/{now.month}/{now.year} (IST) ⏰")
 
 
 def get_day_info(query):
@@ -752,15 +967,25 @@ _LANG_MAP = {
 
 def translate_text(text, target_code="hi", source_code="auto"):
     target_name = _LANG_MAP.get(target_code, target_code)
-    prompt = (f"Translate to **{target_name}**.\n"
-              f"- Only output translated text\n- Preserve formatting\n\nText:\n{text}")
-    result = _groq_call(prompt, temp=0.3)
+    prompt = (
+        f"Translate the following text to **{target_name}**.\n"
+        "Rules:\n"
+        "- Output ONLY the translation\n"
+        "- Preserve original formatting (line breaks, markdown)\n"
+        "- No explanations, no quotes around output\n\n"
+        f"Text:\n{text}"
+    )
+    result = _groq_call(prompt, temp=0.2)
     if not result:
         return {"error": "Translation failed"}
     result = result.strip()
-    if result.startswith('"') and result.endswith('"'):
+    if (result.startswith('"') and result.endswith('"')) or \
+       (result.startswith("'") and result.endswith("'")):
         result = result[1:-1]
-    return {"ok": True, "translated": result, "target": target_code, "source": source_code}
+    return {
+        "ok": True, "translated": result,
+        "target": target_code, "source": source_code,
+    }
 
 
 # ============================================================
@@ -782,6 +1007,36 @@ DIFFICULTY_PRESETS = {
 }
 
 
+def _clean_quiz_question(q, difficulty):
+    if not isinstance(q, dict):
+        return None
+    q_text = re.sub(r"\s+", " ", str(q.get("q", "")).replace("<br>", " ")).strip()
+    if not q_text:
+        return None
+    options = q.get("options", [])
+    if isinstance(options, str):
+        options = [p.strip() for p in re.split(r"<br\s*/?>|\n", options) if p.strip()]
+    clean_opts = []
+    for opt in options:
+        opt = re.sub(r"^[A-Da-d][\)\.\-]\s*", "", str(opt).strip())
+        opt = re.sub(r"\s+", " ", opt.replace("<br>", " ")).strip()
+        if opt:
+            clean_opts.append(opt)
+    if len(clean_opts) < 2:
+        return None
+    clean_opts = clean_opts[:4]
+    while len(clean_opts) < 4:
+        clean_opts.append("—")
+    answer_raw = str(q.get("answer", "")).strip().upper()
+    am = re.search(r"[A-D]", answer_raw)
+    answer_letter = am.group(0) if am else "A"
+    expl = re.sub(r"\s+", " ", str(q.get("explanation", "")).replace("<br>", " ")).strip()
+    return {
+        "q": q_text, "options": clean_opts, "answer": answer_letter,
+        "explanation": expl, "difficulty": difficulty, "tags": [],
+    }
+
+
 def generate_quiz_json(topic="General Knowledge", difficulty="medium", count=5):
     diff_guide = {
         "easy": "basic recall, straightforward",
@@ -792,7 +1047,7 @@ def generate_quiz_json(topic="General Knowledge", difficulty="medium", count=5):
     prompt = f"""Generate exactly {count} multiple-choice quiz questions.
 
 Topic: {topic}
-Difficulty: {difficulty} ({diff_guide.get(difficulty, 'medium')})
+Difficulty: {difficulty} ({diff_guide.get(difficulty, "medium")})
 
 CRITICAL RULES:
 - Questions and options in Hindi (Devanagari script)
@@ -811,31 +1066,14 @@ Return ONLY JSON:
 Generate exactly {count} questions."""
 
     raw = None
-    for attempt, temp in enumerate([0.7, 0.5]):
+    for attempt, temp in enumerate([0.7, 0.5, 0.3]):
         content = _groq_call(prompt, temp=temp, timeout=120)
         if not content:
             continue
-        content = _strip_json_fence(content)
-        s, e = content.find("["), content.rfind("]")
-        if s == -1 or e == -1:
-            continue
-        json_str = _sanitize_json(content[s:e+1])
-        try:
-            raw = _json.loads(json_str)
+        arr = _extract_json(content, kind="array")
+        if arr and isinstance(arr, list) and len(arr) > 0:
+            raw = arr
             break
-        except Exception as ex:
-            print(f"[quiz] Attempt {attempt+1} failed: {ex}", flush=True)
-            if attempt == 1:
-                matches = re.findall(
-                    r'\{\s*"q"\s*:\s*"[^"]*"\s*,\s*"options"\s*:\s*\[[^\]]*\]\s*,\s*"answer"\s*:\s*"[A-D]"[^}]*\}',
-                    json_str
-                )
-                try:
-                    raw = [_json.loads(m) for m in matches if m]
-                    if raw:
-                        break
-                except Exception:
-                    pass
 
     if not raw:
         return {"error": "Quiz generation failed — try a different topic"}
@@ -843,34 +1081,14 @@ Generate exactly {count} questions."""
     cleaned = []
     seen_q = set()
     for q in raw[:count]:
-        if not isinstance(q, dict):
+        c = _clean_quiz_question(q, difficulty)
+        if not c:
             continue
-        q_text = re.sub(r"\s+", " ", str(q.get("q", "")).replace("<br>", " ")).strip()
-        if not q_text or q_text.lower() in seen_q:
+        key = c["q"].lower()
+        if key in seen_q:
             continue
-        options = q.get("options", [])
-        if isinstance(options, str):
-            options = [p.strip() for p in re.split(r"<br\s*/?>|\n", options) if p.strip()]
-        clean_opts = []
-        for opt in options:
-            opt = re.sub(r"^[A-Da-d][\)\.\-]\s*", "", str(opt).strip())
-            opt = re.sub(r"\s+", " ", opt.replace("<br>", " ")).strip()
-            if opt:
-                clean_opts.append(opt)
-        if len(clean_opts) < 2:
-            continue
-        clean_opts = clean_opts[:4]
-        while len(clean_opts) < 4:
-            clean_opts.append("—")
-        answer_raw = str(q.get("answer", "")).strip().upper()
-        am = re.search(r"[A-D]", answer_raw)
-        answer_letter = am.group(0) if am else "A"
-        expl = re.sub(r"\s+", " ", str(q.get("explanation", "")).replace("<br>", " ")).strip()
-        cleaned.append({
-            "q": q_text, "options": clean_opts, "answer": answer_letter,
-            "explanation": expl, "difficulty": difficulty, "tags": [],
-        })
-        seen_q.add(q_text.lower())
+        seen_q.add(key)
+        cleaned.append(c)
 
     if not cleaned:
         return {"error": "No valid questions — try a different topic"}
@@ -885,7 +1103,7 @@ Generate exactly {count} questions."""
 
 
 def _format_quiz_question(session_id, index):
-    st = _quiz_state[session_id]
+    st = _get_quiz(session_id)
     qs = st["questions"]
     if index >= len(qs):
         return _finalize_quiz(session_id)
@@ -905,7 +1123,7 @@ def _format_quiz_question(session_id, index):
 
 
 def _finalize_quiz(session_id):
-    st = _quiz_state[session_id]
+    st = _get_quiz(session_id)
     total = len(st["questions"]) or 1
     score = st["score"]
     pct = int((score / total) * 100)
@@ -933,27 +1151,34 @@ def start_quiz(session_id, topic="General Knowledge", difficulty="medium", count
     data = generate_quiz_json(topic, difficulty, count)
     if "error" in data:
         return f"⚠️ {data['error']}"
-    _quiz_state[session_id] = {
-        "active": True, "topic": data["topic"], "difficulty": data["difficulty"],
-        "questions": data["questions"], "current_index": 0, "score": 0,
-        "correct": 0, "wrong": 0, "user_answers": [],
-        "streak": 0, "max_streak": 0, "time_left": data.get("time_per_q", 30),
-        "hint_used": False, "hint_available": data.get("hint_available", 1),
-        "xp_multiplier": data.get("xp_multiplier", 1.0),
-        "question_start": _time.time(),
-    }
+    with _HISTORY_LOCK:
+        _quiz_state[session_id] = {
+            "active": True, "topic": data["topic"], "difficulty": data["difficulty"],
+            "questions": data["questions"], "current_index": 0, "score": 0,
+            "correct": 0, "wrong": 0, "user_answers": [],
+            "streak": 0, "max_streak": 0,
+            "time_left": data.get("time_per_q", 30),
+            "hint_used": False, "hint_available": data.get("hint_available", 1),
+            "xp_multiplier": data.get("xp_multiplier", 1.0),
+            "question_start": _time.time(),
+        }
+        _quiz_state.move_to_end(session_id)
+        while len(_quiz_state) > MAX_SESSIONS:
+            _quiz_state.popitem(last=False)
     return _format_quiz_question(session_id, 0)
 
 
 def answer_quiz(session_id, user_input):
-    st = _quiz_state[session_id]
+    st = _get_quiz(session_id)
     if not st["active"]:
         return "No active quiz."
     p = user_input.strip().upper()
+
     if p in ["QUIT", "STOP", "EXIT"]:
         s, t = st["score"], st["current_index"]
         st["active"] = False
         return f"## ⏹️ Quiz stopped\n\n**Score:** {s}/{t}"
+
     if p == "HINT":
         if st.get("hint_used"):
             return "Hint already used!"
@@ -966,6 +1191,7 @@ def answer_quiz(session_id, user_input):
         st["hint_used"] = True
         return (f"💡 Hint: **{wrongs[0]}** and **{wrongs[1]}** are wrong.\n\n"
                 f"{_format_quiz_question(session_id, st['current_index'])}")
+
     if p == "SKIP":
         cur = st["questions"][st["current_index"]]
         correct = str(cur.get("answer", "")).strip().upper()[:1]
@@ -978,25 +1204,29 @@ def answer_quiz(session_id, user_input):
         st["current_index"] += 1
         if st["current_index"] >= len(st["questions"]):
             return fb + "---\n\n" + _finalize_quiz(session_id)
-        st["time_left"] = DIFFICULTY_PRESETS.get(st["difficulty"], DIFFICULTY_PRESETS["medium"])["time"]
+        st["time_left"] = DIFFICULTY_PRESETS.get(
+            st["difficulty"], DIFFICULTY_PRESETS["medium"])["time"]
         st["hint_used"] = False
         st["question_start"] = _time.time()
         return fb + "---\n\n" + _format_quiz_question(session_id, st["current_index"])
+
     m = re.search(r"\b([A-D])\b", p)
     letter = m.group(1) if m else (p[0] if p and p[0] in "ABCD" else None)
     if not letter:
         return "Reply with **A/B/C/D** · **hint** · **skip** · **quit**"
+
     cur = st["questions"][st["current_index"]]
     correct = str(cur.get("answer", "")).strip().upper()[:1]
     ok = (letter == correct)
     time_taken = _time.time() - st.get("question_start", _time.time())
+
     if ok:
         st["score"] += 1
         st["correct"] += 1
         st["streak"] = st.get("streak", 0) + 1
         st["max_streak"] = max(st["max_streak"], st["streak"])
         speed_bonus = max(0, int((st.get("time_left", 30) - time_taken) * 2))
-        fb = f"✅ **Sahi!** +1"
+        fb = "✅ **Sahi!** +1"
         if speed_bonus > 0:
             fb += f" ⚡ Speed +{speed_bonus}"
         if st["streak"] >= 3:
@@ -1006,13 +1236,18 @@ def answer_quiz(session_id, user_input):
         st["wrong"] += 1
         st["streak"] = 0
         fb = f"❌ **Galat.** Correct: **{correct}**\n\n"
+
     if cur.get("explanation"):
         fb += f"💡 _{cur['explanation']}_\n\n"
-    st["user_answers"].append({"answer": letter, "correct": ok, "time": round(time_taken, 1)})
+
+    st["user_answers"].append({
+        "answer": letter, "correct": ok, "time": round(time_taken, 1),
+    })
     st["current_index"] += 1
     if st["current_index"] >= len(st["questions"]):
         return fb + "---\n\n" + _finalize_quiz(session_id)
-    st["time_left"] = DIFFICULTY_PRESETS.get(st["difficulty"], DIFFICULTY_PRESETS["medium"])["time"]
+    st["time_left"] = DIFFICULTY_PRESETS.get(
+        st["difficulty"], DIFFICULTY_PRESETS["medium"])["time"]
     st["hint_used"] = False
     st["question_start"] = _time.time()
     return fb + "---\n\n" + _format_quiz_question(session_id, st["current_index"])
@@ -1023,7 +1258,7 @@ def is_quiz_active(session_id):
 
 
 # ============================================================
-# LINGUA
+# LINGUA (fixed duplicates, expanded)
 # ============================================================
 LANG_NAMES = {
     "en": "English", "hi": "Hindi", "es": "Spanish", "fr": "French",
@@ -1042,6 +1277,9 @@ LANG_NAMES = {
     "ht": "Haitian Creole", "zu": "Zulu", "af": "Afrikaans", "am": "Amharic",
     "ms": "Malay", "tl": "Filipino", "my": "Burmese", "km": "Khmer",
     "nv": "Navajo", "haw": "Hawaiian", "tlh": "Klingon", "val": "High Valyrian",
+    # Added new
+    "or": "Odia", "as": "Assamese", "sd": "Sindhi", "ks": "Kashmiri",
+    "br": "Breton", "mt": "Maltese", "lb": "Luxembourgish", "sq": "Albanian",
 }
 
 
@@ -1051,64 +1289,80 @@ def generate_lesson(target_lang, from_lang="en", unit_title="Basics",
     f_name = LANG_NAMES.get(from_lang, from_lang)
     prompt = f"""You are a language teacher creating a lesson for {f_name} speakers learning {t_name}.
 Unit: {unit_title}, Lesson: {lesson_title}, Level: {level}, Exercises: {count}
-Generate JSON with vocab array and exercises array.
-Return ONLY JSON, no markdown."""
+
+Return ONLY JSON, no markdown:
+{{
+  "title": "...",
+  "vocab": [{{"word": "...", "translation": "...", "romanization": "...", "example": "..."}}],
+  "exercises": [
+    {{"type": "mcq", "prompt": "...", "options": ["...", "..."], "answer": "...", "explanation": "..."}},
+    {{"type": "translate", "prompt": "...", "answer": "...", "hint": "..."}},
+    {{"type": "fill", "prompt": "...", "answer": "...", "hint": "..."}}
+  ]
+}}
+
+Rules:
+- {count} total exercises
+- Mix of mcq, translate, fill types
+- Match {t_name} script when applicable
+- Vocab: 6-10 words with example sentences
+"""
     result = _groq_call(prompt, temp=0.7, timeout=120)
     if not result:
         return {"error": "Generation failed"}
-    result = _strip_json_fence(result)
-    s, e = result.find("{"), result.rfind("}")
-    if s == -1 or e == -1:
+    data = _extract_json(result, kind="object")
+    if not data:
         return {"error": "Bad format"}
-    try:
-        return {"ok": True, **_json.loads(_sanitize_json(result[s:e+1]))}
-    except Exception as ex:
-        return {"error": f"Parse failed: {ex}"}
+    return {"ok": True, **data}
 
 
 def generate_units(target_lang, from_lang="en", count=5):
     t_name = LANG_NAMES.get(target_lang, target_lang)
     f_name = LANG_NAMES.get(from_lang, from_lang)
     prompt = f"""Generate course outline for {f_name} speakers learning {t_name}.
-Return ONLY JSON: {{"units": [{{"number": 1, "title": "Greetings", "description": "...", "icon": "👋", "cefr": "A1"}}]}}
-Rules: {count} units, A1→A2→B1, emoji icons."""
+
+Return ONLY JSON:
+{{"units": [{{"number": 1, "title": "Greetings", "description": "...", "icon": "👋", "cefr": "A1"}}]}}
+
+Rules: {count} units, A1→A2→B1 progression, emoji icons."""
     result = _groq_call(prompt, temp=0.7)
     if not result:
         return {"error": "Generation failed"}
-    result = _strip_json_fence(result)
-    s, e = result.find("{"), result.rfind("}")
-    if s == -1 or e == -1:
+    data = _extract_json(result, kind="object")
+    if not data:
         return {"error": "Bad format"}
-    try:
-        data = _json.loads(_sanitize_json(result[s:e+1]))
-        return {"ok": True, "units": data.get("units", [])}
-    except Exception as ex:
-        return {"error": f"Parse failed: {ex}"}
+    return {"ok": True, "units": data.get("units", [])}
 
 
-def language_chat(target_lang, user_message, scenario="casual", history=None, from_lang="en"):
+def language_chat(target_lang, user_message, scenario="casual",
+                  history=None, from_lang="en"):
     t_name = LANG_NAMES.get(target_lang, target_lang)
     f_name = LANG_NAMES.get(from_lang, from_lang)
     system = f"""You are a friendly native {t_name} speaker helping a {f_name} speaker practice.
 Scenario: {scenario}
 RULES: Reply in {t_name}, SHORT (1-2 sentences), ask follow-up.
-Return ONLY JSON: {{"reply": "...", "romanization": "...", "translation": "...", "correction": "..."}}"""
+
+Return ONLY JSON:
+{{"reply": "...", "romanization": "...", "translation": "...", "correction": "..."}}"""
     msgs = [{"role": "system", "content": system}]
     for h in (history or [])[-6:]:
-        msgs.append({"role": h.get("role", "user"), "content": h.get("content", "")})
+        msgs.append({"role": h.get("role", "user"),
+                     "content": h.get("content", "")})
     msgs.append({"role": "user", "content": user_message})
     try:
         res = requests.post(
             "https://api.groq.com/openai/v1/chat/completions",
-            headers={"Authorization": f"Bearer {GROQ_API_KEY}", "Content-Type": "application/json"},
-            json={"model": "openai/gpt-oss-20b", "messages": msgs, "temperature": 0.8},
-            timeout=60)
+            headers={"Authorization": f"Bearer {GROQ_API_KEY}",
+                     "Content-Type": "application/json"},
+            json={"model": "openai/gpt-oss-20b", "messages": msgs,
+                  "temperature": 0.8},
+            timeout=60,
+        )
         if res.status_code == 200:
             raw = res.json()["choices"][0]["message"]["content"]
-            raw = _strip_json_fence(raw)
-            s, e = raw.find("{"), raw.rfind("}")
-            if s >= 0 and e > s:
-                return _json.loads(_sanitize_json(raw[s:e+1]))
+            data = _extract_json(raw, kind="object")
+            if data:
+                return data
     except Exception as e:
         print(f"[language_chat] {e}", flush=True)
     return {"reply": "...", "translation": "Try again.", "correction": ""}
@@ -1123,21 +1377,17 @@ Text:\n{text[:4000]}"""
     result = _groq_call(prompt, temp=0.3, timeout=90)
     if not result:
         return []
-    result = _strip_json_fence(result)
-    s, e = result.find("["), result.rfind("]")
-    if s == -1 or e == -1:
+    arr = _extract_json(result, kind="array")
+    if not arr or not isinstance(arr, list):
         return []
-    try:
-        return _json.loads(_sanitize_json(result[s:e+1]))[:max_words]
-    except Exception:
-        return []
+    return arr[:max_words]
 
 
 def explain_mistake(exercise, user_answer, target_lang, from_lang="en"):
     t_name = LANG_NAMES.get(target_lang, target_lang)
     prompt = f"""A student learning {t_name} made a mistake.
-Exercise: {exercise.get('prompt', '')}
-Correct: {exercise.get('answer', '')}
+Exercise: {exercise.get("prompt", "")}
+Correct: {exercise.get("answer", "")}
 Student's: {user_answer}
 Explain in Hinglish (2-3 sentences). Encouraging. Short."""
     result = _groq_call(prompt, temp=0.5, timeout=30)
@@ -1149,19 +1399,27 @@ Explain in Hinglish (2-3 sentences). Encouraging. Short."""
 # ============================================================
 def voice_tutor_reply(topic, user_speech, history=None):
     system = f"""You are NOVEX Voice Tutor — teaching "{topic}" via voice.
-RULES: Reply in 1-3 SHORT sentences, ask ONE follow-up question, match student's language, no markdown."""
+RULES: Reply in 1-3 SHORT sentences, ask ONE follow-up question,
+match student's language, no markdown."""
     msgs = [{"role": "system", "content": system}]
     for h in (history or [])[-8:]:
-        msgs.append({"role": h.get("role", "user"), "content": h.get("content", "")})
+        msgs.append({"role": h.get("role", "user"),
+                     "content": h.get("content", "")})
     msgs.append({"role": "user", "content": user_speech})
     try:
         res = requests.post(
             "https://api.groq.com/openai/v1/chat/completions",
-            headers={"Authorization": f"Bearer {GROQ_API_KEY}", "Content-Type": "application/json"},
-            json={"model": "openai/gpt-oss-20b", "messages": msgs, "temperature": 0.8},
-            timeout=45)
+            headers={"Authorization": f"Bearer {GROQ_API_KEY}",
+                     "Content-Type": "application/json"},
+            json={"model": "openai/gpt-oss-20b", "messages": msgs,
+                  "temperature": 0.8},
+            timeout=45,
+        )
         if res.status_code == 200:
-            return {"ok": True, "reply": res.json()["choices"][0]["message"]["content"].strip()}
+            return {
+                "ok": True,
+                "reply": res.json()["choices"][0]["message"]["content"].strip(),
+            }
     except Exception as e:
         print(f"[voice_tutor] {e}", flush=True)
     return {"error": "Voice reply failed"}
@@ -1170,66 +1428,58 @@ RULES: Reply in 1-3 SHORT sentences, ask ONE follow-up question, match student's
 def generate_room_questions(topic, difficulty="medium", count=10):
     prompt = f"""Generate {count} MCQ for multiplayer quiz.
 Topic: {topic}, Difficulty: {difficulty}
-Return ONLY JSON array: [{{"q": "...", "options": ["A","B","C","D"], "answer": "A", "explanation": "..."}}]"""
+Return ONLY JSON array:
+[{{"q": "...", "options": ["A","B","C","D"], "answer": "A", "explanation": "..."}}]"""
     result = _groq_call(prompt, temp=0.7, timeout=90)
     if not result:
         return []
-    result = _strip_json_fence(result)
-    s, e = result.find("["), result.rfind("]")
-    if s == -1 or e == -1:
+    arr = _extract_json(result, kind="array")
+    if not arr or not isinstance(arr, list):
         return []
-    try:
-        arr = _json.loads(_sanitize_json(result[s:e+1]))
-        cleaned = []
-        for q in arr[:count]:
-            if not isinstance(q, dict):
-                continue
-            options = q.get("options", [])
-            if len(options) < 2:
-                continue
-            while len(options) < 4:
-                options.append("—")
-            am = re.search(r"[A-D]", str(q.get("answer", "A")).upper())
+    cleaned = []
+    for q in arr[:count]:
+        c = _clean_quiz_question(q, difficulty)
+        if c:
             cleaned.append({
-                "q": re.sub(r"\s+", " ", str(q.get("q", "")).strip()),
-                "options": [str(o) for o in options[:4]],
-                "answer": am.group(0) if am else "A",
-                "explanation": str(q.get("explanation", "")).strip(),
+                "q": c["q"], "options": c["options"],
+                "answer": c["answer"], "explanation": c["explanation"],
             })
-        return cleaned
-    except Exception:
-        return []
+    return cleaned
 
 
 def verify_peer_answer(question, student_answer, subject="General"):
     prompt = f"""A student answered another's doubt.
-Subject: {subject}, Question: {question}, Answer: {student_answer}
-Evaluate in JSON: {{"rating": 1-5, "is_correct": true/false, "feedback": "1 line", "improvement": "1 line"}}
+Subject: {subject}
+Question: {question}
+Answer: {student_answer}
+
+Evaluate in JSON:
+{{"rating": 1-5, "is_correct": true/false, "feedback": "1 line", "improvement": "1 line"}}
 ONLY JSON."""
     result = _groq_call(prompt, temp=0.5, timeout=45)
     if not result:
-        return {"rating": 3, "is_correct": True, "feedback": "Looks reasonable!", "improvement": ""}
-    result = _strip_json_fence(result)
-    s, e = result.find("{"), result.rfind("}")
-    if s == -1 or e == -1:
-        return {"rating": 3, "is_correct": True, "feedback": "OK", "improvement": ""}
-    try:
-        return _json.loads(_sanitize_json(result[s:e+1]))
-    except Exception:
-        return {"rating": 3, "is_correct": True, "feedback": "OK", "improvement": ""}
+        return {"rating": 3, "is_correct": True,
+                "feedback": "Looks reasonable!", "improvement": ""}
+    data = _extract_json(result, kind="object")
+    if data:
+        return data
+    return {"rating": 3, "is_correct": True, "feedback": "OK", "improvement": ""}
 
 
-def transcribe_audio_whisper(audio_path):
+def transcribe_audio_whisper(audio_path, language=None):
     if not GROQ_API_KEY:
         return ""
     try:
         with open(audio_path, "rb") as f:
             files = {"file": (os.path.basename(audio_path), f, "audio/webm")}
-            data = {"model": "whisper-large-v3-turbo", "language": "hi"}
+            data = {"model": "whisper-large-v3-turbo"}
+            if language:
+                data["language"] = language
             r = requests.post(
                 "https://api.groq.com/openai/v1/audio/transcriptions",
                 headers={"Authorization": f"Bearer {GROQ_API_KEY}"},
-                files=files, data=data, timeout=60)
+                files=files, data=data, timeout=60,
+            )
             if r.status_code == 200:
                 return r.json().get("text", "").strip()
     except Exception as e:
@@ -1243,32 +1493,43 @@ def transcribe_audio_whisper(audio_path):
 def generate_formula_sheet(subject, chapters, board="CBSE"):
     ch_list = ", ".join(chapters) if chapters else "all chapters"
     prompt = f"""Create formula sheet for {board} {subject}. Chapters: {ch_list}
-Return ONLY JSON with sections array. Each section has chapter name and formulas array.
-Each formula: {{"name", "plain", "meaning", "units"}}. NO markdown."""
+
+Return ONLY JSON:
+{{
+  "title": "...",
+  "sections": [
+    {{"chapter": "...", "formulas": [
+      {{"name": "...", "plain": "...", "meaning": "...", "units": "..."}}
+    ]}}
+  ]
+}}
+NO markdown outside JSON."""
     result = _groq_call(prompt, temp=0.5, timeout=90)
     if not result:
         return {"error": "Generation failed"}
-    result = _strip_json_fence(result)
-    s, e = result.find("{"), result.rfind("}")
-    if s == -1 or e == -1:
+    data = _extract_json(result, kind="object")
+    if not data:
         return {"error": "Bad format"}
     try:
-        data = _json.loads(_sanitize_json(result[s:e+1]))
         md = f"# {data.get('title', subject + ' Formula Sheet')}\n\n"
         for sec in data.get("sections", []):
             md += f"## {sec.get('chapter', '')}\n\n"
             md += "| Formula | Meaning | Units |\n|---|---|---|\n"
             for f in sec.get("formulas", []):
-                md += f"| `{f.get('plain', f.get('latex', ''))}` | {f.get('meaning', '')} | {f.get('units', '')} |\n"
+                plain = f.get("plain", f.get("latex", ""))
+                md += f"| `{plain}` | {f.get('meaning', '')} | {f.get('units', '')} |\n"
             md += "\n"
-        return {"ok": True, "title": data.get("title", subject), "content": md, "raw": data}
+        return {"ok": True, "title": data.get("title", subject),
+                "content": md, "raw": data}
     except Exception as ex:
         return {"error": f"Parse failed: {ex}"}
 
 
 def generate_mind_map(topic, depth=3):
     prompt = f"""Create hierarchical mind map for: **{topic}**
-Return ONLY markdown for Markmap (nested bullet list). Max depth {depth}, 4-6 main branches.
+
+Return ONLY markdown for Markmap (nested bullet list).
+Max depth {depth}, 4-6 main branches.
 NO explanations, ONLY markmap markdown."""
     result = _groq_call(prompt, temp=0.5, timeout=60)
     if not result:
@@ -1282,21 +1543,21 @@ NO explanations, ONLY markmap markdown."""
 
 def generate_podcast_script(source_text, title="Study Podcast", target_lang="hinglish"):
     prompt = f"""Create 2-minute podcast script from this content.
-Return ONLY JSON: {{"title": "Podcast title", "lines": [{{"speaker": "A", "text": "..."}}, {{"speaker": "B", "text": "..."}}]}}
+
+Return ONLY JSON:
+{{"title": "Podcast title", "lines": [{{"speaker": "A", "text": "..."}}, {{"speaker": "B", "text": "..."}}]}}
+
 Rules: A=Teacher, B=Student, Language: {target_lang}, 12-16 lines.
+
 Content:\n{source_text[:3000]}"""
     result = _groq_call(prompt, temp=0.8, timeout=90)
     if not result:
         return {"error": "Generation failed"}
-    result = _strip_json_fence(result)
-    s, e = result.find("{"), result.rfind("}")
-    if s == -1 or e == -1:
+    data = _extract_json(result, kind="object")
+    if not data:
         return {"error": "Bad format"}
-    try:
-        data = _json.loads(_sanitize_json(result[s:e+1]))
-        return {"ok": True, "title": data.get("title", title), "lines": data.get("lines", [])}
-    except Exception as ex:
-        return {"error": f"Parse failed: {ex}"}
+    return {"ok": True, "title": data.get("title", title),
+            "lines": data.get("lines", [])}
 
 
 def analyze_weak_topics(attempts):
@@ -1312,9 +1573,11 @@ def analyze_weak_topics(attempts):
             continue
         pct = round((s["correct"] / s["total"]) * 100)
         if pct < 60:
-            weak.append({"topic": topic, "subject": s["subject"],
-                         "accuracy": pct, "attempts": s["total"],
-                         "priority": "high" if pct < 40 else "medium"})
+            weak.append({
+                "topic": topic, "subject": s["subject"],
+                "accuracy": pct, "attempts": s["total"],
+                "priority": "high" if pct < 40 else "medium",
+            })
     weak.sort(key=lambda x: x["accuracy"])
     return weak[:10]
 
@@ -1324,15 +1587,19 @@ def debate_generate(topic, round_num, history, side="A"):
     system = f"""You are Debater {side} {side_label} "{topic}".
 RULES: SHORT (2-3 sentences), facts, counter opponent, persuasive, Hinglish.
 Round {round_num}/5."""
-    history_text = "\n".join(f"[{h.get('speaker', '?')}]: {h.get('content', '')}"
-                             for h in (history or [])[-6:])
+    history_text = "\n".join(
+        f"[{h.get('speaker', '?')}]: {h.get('content', '')}"
+        for h in (history or [])[-6:]
+    )
     prompt = f"Topic: {topic}\n\nPrevious:\n{history_text}\n\nNext argument:"
     result = _groq_call(prompt, temp=0.9, timeout=45, system=system)
     return result or "Argument generation failed."
 
 
 def debate_verdict(topic, history):
-    hist = "\n".join(f"[{h.get('speaker', '?')}]: {h.get('content', '')}" for h in history)
+    hist = "\n".join(
+        f"[{h.get('speaker', '?')}]: {h.get('content', '')}" for h in history
+    )
     prompt = f"""Debate on: "{topic}"
 Transcript:\n{hist}
 As neutral judge, verdict in Hinglish under 150 words."""
@@ -1341,42 +1608,44 @@ As neutral judge, verdict in Hinglish under 150 words."""
 
 
 def generate_written_test(topic, qtype="fill_blank", count=5):
-    type_map = {"true_false": "True/False statements", "fill_blank": "Fill in the blank",
-                "short_answer": "Short answer", "long_answer": "Long answer", "match": "Match"}
+    type_map = {
+        "true_false": "True/False statements",
+        "fill_blank": "Fill in the blank",
+        "short_answer": "Short answer",
+        "long_answer": "Long answer",
+        "match": "Match",
+    }
     desc = type_map.get(qtype, "Fill in the blank")
     prompt = f"""Generate {count} {desc} on "{topic}".
-Return ONLY JSON array: [{{"q": "...", "answer": "...", "explanation": "...", "marks": 1}}]"""
+Return ONLY JSON array:
+[{{"q": "...", "answer": "...", "explanation": "...", "marks": 1}}]"""
     result = _groq_call(prompt, temp=0.7, timeout=60)
     if not result:
         return {"error": "Generation failed"}
-    result = _strip_json_fence(result)
-    s, e = result.find("["), result.rfind("]")
-    if s == -1 or e == -1:
+    arr = _extract_json(result, kind="array")
+    if not arr or not isinstance(arr, list):
         return {"error": "Bad format"}
-    try:
-        arr = _json.loads(_sanitize_json(result[s:e+1]))
-        return {"ok": True, "topic": topic, "qtype": qtype, "questions": arr[:count]}
-    except Exception as ex:
-        return {"error": f"Parse failed: {ex}"}
+    return {"ok": True, "topic": topic, "qtype": qtype, "questions": arr[:count]}
 
 
 def generate_mock_test(exam="JEE Main", subjects=None, count=10, difficulty="medium"):
     subjects = subjects or ["Physics", "Chemistry", "Mathematics"]
     sub_str = ", ".join(subjects)
-    prompt = f"""Generate mock test for {exam}. Subjects: {sub_str}, Count: {count}, Difficulty: {difficulty}
-Return ONLY JSON with exam, duration_min, questions array.
-Each question: subject, q, options, answer, explanation, marks, negative."""
+    prompt = f"""Generate mock test for {exam}.
+Subjects: {sub_str}, Count: {count}, Difficulty: {difficulty}
+
+Return ONLY JSON:
+{{"exam": "...", "duration_min": 180, "questions": [
+  {{"subject": "...", "q": "...", "options": ["A","B","C","D"], "answer": "A",
+    "explanation": "...", "marks": 4, "negative": -1}}
+]}}"""
     result = _groq_call(prompt, temp=0.7, timeout=120)
     if not result:
         return {"error": "Generation failed"}
-    result = _strip_json_fence(result)
-    s, e = result.find("{"), result.rfind("}")
-    if s == -1 or e == -1:
+    data = _extract_json(result, kind="object")
+    if not data:
         return {"error": "Bad format"}
-    try:
-        return {"ok": True, **_json.loads(_sanitize_json(result[s:e+1]))}
-    except Exception as ex:
-        return {"error": f"Parse failed: {ex}"}
+    return {"ok": True, **data}
 
 
 # ============================================================
@@ -1394,7 +1663,8 @@ _GREETINGS = {
 }
 
 
-def novex(user_input, user=None, settings=None, personas=None, memory=None, session_id=None):
+def novex(user_input, user=None, settings=None, personas=None,
+          memory=None, session_id=None):
     sid = session_id or user or "default"
     p = user_input.lower().strip()
     if not p:
@@ -1404,12 +1674,12 @@ def novex(user_input, user=None, settings=None, personas=None, memory=None, sess
     raw_lower = user_input.lower().strip()
 
     if raw_lower in ("/quiz", "quiz"):
-        if _quiz_state[sid]["active"]:
+        if _quiz_state.get(sid, {}).get("active"):
             return answer_quiz(sid, user_input)
         return start_quiz(sid, "General Knowledge", "medium")
 
     if raw_lower in ("/quiz stop", "quiz stop", "/quiz quit", "quiz quit"):
-        if _quiz_state[sid]["active"]:
+        if _quiz_state.get(sid, {}).get("active"):
             s, t = _quiz_state[sid]["score"], _quiz_state[sid]["current_index"]
             _quiz_state[sid]["active"] = False
             return f"## ⏹️ Quiz stopped\n\n**Score:** {s}/{t}"
@@ -1421,8 +1691,10 @@ def novex(user_input, user=None, settings=None, personas=None, memory=None, sess
                 r"^start\s+(.+?)\s+quiz$", r"^(.+?)\s+quiz$"]:
         m = re.match(pat, raw_lower)
         if m:
-            topic = re.sub(r"\s+", " ", re.sub(r"\bquiz\b", "",
-                           re.sub(r"^/+", "", m.group(1).strip())).strip()).strip()
+            topic = re.sub(
+                r"\s+", " ",
+                re.sub(r"\bquiz\b", "", re.sub(r"^/+", "", m.group(1).strip())).strip(),
+            ).strip()
             if topic and len(topic) >= 2:
                 for diff in ["easy", "medium", "hard", "expert"]:
                     if topic.endswith(" " + diff):
@@ -1434,7 +1706,7 @@ def novex(user_input, user=None, settings=None, personas=None, memory=None, sess
     if quiz_topic:
         return start_quiz(sid, quiz_topic.title(), quiz_diff)
 
-    if _quiz_state[sid].get("active"):
+    if _quiz_state.get(sid, {}).get("active"):
         return answer_quiz(sid, user_input)
 
     if p.startswith("model "):
@@ -1464,7 +1736,8 @@ def novex(user_input, user=None, settings=None, personas=None, memory=None, sess
             return get_wiki(user_input.split(" ", 1)[1].strip())
         if p.startswith("calc ") or p.startswith("calculate "):
             return calculate(user_input.split(" ", 1)[1])
-        return ask_ollama(user_input, model=_ACTIVE_MODEL.replace("ollama:", ""), session_id=sid)
+        return ask_ollama(user_input, model=_ACTIVE_MODEL.replace("ollama:", ""),
+                          session_id=sid)
 
     if p.startswith("mode "):
         mode = p.replace("mode", "").strip()
@@ -1475,10 +1748,12 @@ def novex(user_input, user=None, settings=None, personas=None, memory=None, sess
         return f"Available: **{', '.join(PERSONAS.keys())}**"
 
     if p in ("save code", "code save karo"):
-        if not _last_code[sid]:
+        if not _last_code.get(sid):
             return "No code yet."
-        return save_code(_last_code[sid],
-                        f"novex_code_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.py")
+        return save_code(
+            _last_code[sid],
+            f"novex_code_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.py",
+        )
 
     if p.startswith("pdf "):
         parts = user_input.split(":", 1)
@@ -1505,8 +1780,8 @@ def novex(user_input, user=None, settings=None, personas=None, memory=None, sess
     if any(w in p for w in ["time", "samay", "baj", "waqt", "clock", "ghadi"]):
         return get_time()
 
-    if any(w in p for w in ["weather", "mausam", "temperature", "garmi", "sardi",
-                             "barish", "rain", "forecast"]):
+    if any(w in p for w in ["weather", "mausam", "temperature", "garmi",
+                            "sardi", "barish", "rain", "forecast"]):
         city = next((c for c in ["mumbai", "delhi", "bangalore", "kolkata",
                                  "chennai", "pune", "hyderabad"] if c in p), "Delhi")
         return get_weather(city)
@@ -1527,9 +1802,11 @@ def novex(user_input, user=None, settings=None, personas=None, memory=None, sess
     if rem:
         return f"⏰ Reminder set: **{rem['text']}** @ {rem['when']}"
 
-    return ask_groq(user_input,
-                    custom_instructions=(settings or {}).get("custom_instructions", ""),
-                    user_personas=personas, memory=memory, session_id=sid)
+    return ask_groq(
+        user_input,
+        custom_instructions=(settings or {}).get("custom_instructions", ""),
+        user_personas=personas, memory=memory, session_id=sid,
+    )
 
 
 # ============================================================
@@ -1539,7 +1816,8 @@ def get_weather(city="Delhi"):
     try:
         geo = requests.get(
             f"https://geocoding-api.open-meteo.com/v1/search?name={city}&count=1",
-            timeout=10).json()
+            timeout=10,
+        ).json()
         if not geo.get("results"):
             return f"**{city}** nahi mila."
         lat, lon = geo["results"][0]["latitude"], geo["results"][0]["longitude"]
@@ -1547,7 +1825,8 @@ def get_weather(city="Delhi"):
         c = requests.get(
             f"https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}"
             f"&current=temperature_2m,relative_humidity_2m,wind_speed_10m",
-            timeout=10).json()["current"]
+            timeout=10,
+        ).json()["current"]
         return (f"**{name}**: {c['temperature_2m']}°C, "
                 f"humidity {c['relative_humidity_2m']}%, "
                 f"wind {c['wind_speed_10m']} km/h")
@@ -1566,7 +1845,8 @@ def get_wiki(topic):
         title = results[0]["title"]
         res = requests.get(
             f"https://en.wikipedia.org/api/rest_v1/page/summary/{quote(title)}",
-            timeout=10)
+            timeout=10,
+        )
         if res.status_code == 200:
             ext = res.json().get("extract", "")
             if ext:
@@ -1633,7 +1913,9 @@ def read_pdf(path):
     try:
         from pypdf import PdfReader
         reader = PdfReader(path)
-        return "".join((p.extract_text() or "") + "\n" for p in reader.pages).strip()
+        return "".join(
+            (p.extract_text() or "") + "\n" for p in reader.pages
+        ).strip()
     except Exception as e:
         return f"PDF error: {e}"
 
@@ -1649,70 +1931,97 @@ def ask_about_pdf(path, q):
 
 def ask_groq(prompt, system_prompt=None, custom_instructions="", user_personas=None,
              memory=None, session_id="default"):
-    mode = _current_mode[session_id]
+    mode = _current_mode.get(session_id, "default")
     if system_prompt is None:
-        system_prompt = build_system_prompt(mode, custom_instructions, user_personas, memory)
+        system_prompt = build_system_prompt(
+            mode, custom_instructions, user_personas, memory
+        )
     url = "https://api.groq.com/openai/v1/chat/completions"
-    headers = {"Authorization": f"Bearer {GROQ_API_KEY}", "Content-Type": "application/json"}
+    headers = {"Authorization": f"Bearer {GROQ_API_KEY}",
+               "Content-Type": "application/json"}
     with _HISTORY_LOCK:
-        history = list(_chat_history[session_id])[-6:]
-    messages = [{"role": "system", "content": system_prompt}] + history + \
-               [{"role": "user", "content": prompt}]
+        history = list(_chat_history.get(session_id, []))[-6:]
+    messages = ([{"role": "system", "content": system_prompt}] + history
+                + [{"role": "user", "content": prompt}])
     last_err = ""
     for model in _models_for_call():
-        try:
-            res = requests.post(url, headers=headers,
-                                json={"model": model, "messages": messages, "temperature": 0.8},
-                                timeout=60)
-            if res.status_code == 200:
-                data = res.json()
-                reply = data["choices"][0]["message"]["content"]
-                usage = data.get("usage", {})
-                if usage and _on_usage:
-                    try:
-                        _on_usage(session_id, model, usage.get("prompt_tokens", 0),
-                                  usage.get("completion_tokens", 0))
-                    except Exception:
-                        pass
-                with _HISTORY_LOCK:
-                    _chat_history[session_id].append({"role": "user", "content": prompt})
-                    _chat_history[session_id].append({"role": "assistant", "content": reply})
-                    if len(_chat_history[session_id]) > MAX_HISTORY:
-                        _chat_history[session_id][:] = _chat_history[session_id][-MAX_HISTORY:]
-                code = extract_code(reply)
-                if code:
-                    _last_code[session_id] = code
-                return reply
-            last_err = f"{model}: {res.status_code}"
-        except Exception as e:
-            last_err = f"{model}: {e}"
+        for attempt in range(GROQ_MAX_RETRIES + 1):
+            try:
+                res = requests.post(
+                    url, headers=headers,
+                    json={"model": model, "messages": messages, "temperature": 0.8},
+                    timeout=GROQ_TIMEOUT,
+                )
+                if res.status_code == 200:
+                    data = res.json()
+                    reply = data["choices"][0]["message"]["content"]
+                    usage = data.get("usage", {})
+                    if usage and _on_usage:
+                        try:
+                            _on_usage(session_id, model,
+                                      usage.get("prompt_tokens", 0),
+                                      usage.get("completion_tokens", 0))
+                        except Exception:
+                            pass
+                    with _HISTORY_LOCK:
+                        _chat_history.setdefault(session_id, [])
+                        _chat_history[session_id].append(
+                            {"role": "user", "content": prompt})
+                        _chat_history[session_id].append(
+                            {"role": "assistant", "content": reply})
+                        if len(_chat_history[session_id]) > MAX_HISTORY:
+                            _chat_history[session_id][:] = \
+                                _chat_history[session_id][-MAX_HISTORY:]
+                        _chat_history.move_to_end(session_id)
+                        while len(_chat_history) > MAX_SESSIONS:
+                            _chat_history.popitem(last=False)
+                    code = extract_code(reply)
+                    if code:
+                        _last_code[session_id] = code
+                    return reply
+                if res.status_code in (429, 500, 502, 503, 504):
+                    last_err = f"{model}: {res.status_code}"
+                    _time.sleep(GROQ_RETRY_BACKOFF * (attempt + 1))
+                    continue
+                last_err = f"{model}: {res.status_code}"
+                break
+            except Exception as e:
+                last_err = f"{model}: {e}"
+                _time.sleep(GROQ_RETRY_BACKOFF * (attempt + 1))
     return f"⚠️ All models failed. {last_err}"
 
 
-def ask_groq_stream(prompt, system_prompt=None, custom_instructions="", user_personas=None,
-                    user=None, on_usage=None, memory=None, session_id="default"):
-    mode = _current_mode[session_id]
+def ask_groq_stream(prompt, system_prompt=None, custom_instructions="",
+                    user_personas=None, user=None, on_usage=None,
+                    memory=None, session_id="default"):
+    mode = _current_mode.get(session_id, "default")
     if system_prompt is None:
-        system_prompt = build_system_prompt(mode, custom_instructions, user_personas, memory)
+        system_prompt = build_system_prompt(
+            mode, custom_instructions, user_personas, memory
+        )
     if not GROQ_API_KEY:
         yield "⚠️ GROQ_API_KEY missing."
         return
     url = "https://api.groq.com/openai/v1/chat/completions"
-    headers = {"Authorization": f"Bearer {GROQ_API_KEY}",
-               "Content-Type": "application/json",
-               "Accept": "text/event-stream; charset=utf-8"}
+    headers = {
+        "Authorization": f"Bearer {GROQ_API_KEY}",
+        "Content-Type": "application/json",
+        "Accept": "text/event-stream; charset=utf-8",
+    }
     with _HISTORY_LOCK:
-        history = list(_chat_history[session_id])[-6:]
-    messages = [{"role": "system", "content": system_prompt}] + history + \
-               [{"role": "user", "content": prompt}]
+        history = list(_chat_history.get(session_id, []))[-6:]
+    messages = ([{"role": "system", "content": system_prompt}] + history
+                + [{"role": "user", "content": prompt}])
     last_err = ""
     for model in _models_for_call():
         res = None
         try:
-            res = requests.post(url, headers=headers,
-                                json={"model": model, "messages": messages,
-                                      "temperature": 0.8, "stream": True},
-                                timeout=(10, 90), stream=True)
+            res = requests.post(
+                url, headers=headers,
+                json={"model": model, "messages": messages,
+                      "temperature": 0.8, "stream": True},
+                timeout=(10, 90), stream=True,
+            )
             if res.status_code != 200:
                 last_err = f"{model}: {res.status_code}"
                 try:
@@ -1720,8 +2029,11 @@ def ask_groq_stream(prompt, system_prompt=None, custom_instructions="", user_per
                 except Exception:
                     pass
                 continue
+
             full = ""
-            tokens_in_approx = sum(len(str(m.get("content", ""))) // 4 for m in messages)
+            tokens_in_approx = sum(
+                len(str(m.get("content", ""))) // 4 for m in messages
+            )
             for raw in res.iter_lines(chunk_size=512, decode_unicode=False):
                 if not raw:
                     continue
@@ -1749,10 +2061,17 @@ def ask_groq_stream(prompt, system_prompt=None, custom_instructions="", user_per
                 pass
             if full:
                 with _HISTORY_LOCK:
-                    _chat_history[session_id].append({"role": "user", "content": prompt})
-                    _chat_history[session_id].append({"role": "assistant", "content": full})
+                    _chat_history.setdefault(session_id, [])
+                    _chat_history[session_id].append(
+                        {"role": "user", "content": prompt})
+                    _chat_history[session_id].append(
+                        {"role": "assistant", "content": full})
                     if len(_chat_history[session_id]) > MAX_HISTORY:
-                        _chat_history[session_id][:] = _chat_history[session_id][-MAX_HISTORY:]
+                        _chat_history[session_id][:] = \
+                            _chat_history[session_id][-MAX_HISTORY:]
+                    _chat_history.move_to_end(session_id)
+                    while len(_chat_history) > MAX_SESSIONS:
+                        _chat_history.popitem(last=False)
                 code = extract_code(full)
                 if code:
                     _last_code[session_id] = code
@@ -1776,12 +2095,18 @@ def ask_groq_stream(prompt, system_prompt=None, custom_instructions="", user_per
 
 def ask_ollama(prompt, model="llama3.2", system_prompt=None, session_id="default"):
     if system_prompt is None:
-        system_prompt = PERSONAS.get(_current_mode[session_id], PERSONAS["default"])
+        system_prompt = PERSONAS.get(
+            _current_mode.get(session_id, "default"), PERSONAS["default"]
+        )
     try:
-        res = requests.post("http://localhost:11434/api/chat",
+        res = requests.post(
+            "http://localhost:11434/api/chat",
             json={"model": model, "messages": [
                 {"role": "system", "content": system_prompt},
-                {"role": "user", "content": prompt}], "stream": False}, timeout=180)
+                {"role": "user", "content": prompt},
+            ], "stream": False},
+            timeout=180,
+        )
         if res.status_code == 200:
             return res.json()["message"]["content"]
         return f"Ollama error: {res.status_code}"
@@ -1799,24 +2124,62 @@ def get_active_model():
     return _ACTIVE_MODEL
 
 
+# ============================================================
+# HEALTH / DIAGNOSTICS
+# ============================================================
+def novex_health():
+    """Return health info about the backend engine."""
+    return {
+        "groq_key": bool(GROQ_API_KEY),
+        "convex_url": bool(CONVEX_URL),
+        "serper_key": bool(SERPER_API_KEY),
+        "search_provider": SEARCH_PROVIDER,
+        "active_model": _ACTIVE_MODEL,
+        "available_models": GROQ_MODELS,
+        "vision_models": VISION_MODELS,
+        "langs_count": len(LANG_NAMES),
+        "personas": list(PERSONAS.keys()),
+        "sessions": get_session_info(),
+        "search_cache_size": len(_SEARCH_CACHE),
+    }
+
+
 __all__ = [
+    # Core
     "novex", "ask_groq", "ask_groq_stream", "ask_ollama",
-    "set_model", "get_active_model", "is_quiz_active",
+    "set_model", "get_active_model",
+    # Prompts / personas
     "build_system_prompt", "PERSONAS", "DEEP_EXPLAIN_SYSTEM", "DEFAULT_SYSTEM",
-    "extract_facts", "generate_flashcards", "generate_document",
-    "generate_quiz_json", "translate_text", "parse_reminder",
-    "get_time", "get_day_info", "get_weather", "get_news", "get_wiki",
-    "calculate", "save_note", "show_notes", "clear_notes",
-    "save_code", "extract_code", "read_pdf", "ask_about_pdf",
-    "web_search", "web_search_structured", "format_search_results_with_citations",
-    "start_quiz", "answer_quiz", "solve_image", "srs_next", "calculate_level",
-    "LEVELS", "BADGES", "EXP_REWARDS", "VISION_MODELS",
+    # Session
+    "clear_session", "get_session_info", "is_quiz_active",
+    # Memory
+    "extract_facts",
+    # Flashcards / Docs
+    "generate_flashcards", "generate_document",
+    # Quiz
+    "generate_quiz_json", "start_quiz", "answer_quiz",
     "QUIZ_CATEGORIES", "DIFFICULTY_PRESETS",
+    # Utils
+    "translate_text", "parse_reminder", "get_time", "get_day_info",
+    "get_weather", "get_news", "get_wiki", "calculate",
+    "save_note", "show_notes", "clear_notes",
+    "save_code", "extract_code", "read_pdf", "ask_about_pdf",
+    # Search
+    "web_search", "web_search_structured", "format_search_results_with_citations",
+    # Vision
+    "solve_image", "VISION_MODELS",
+    # SRS / Gamification
+    "srs_next", "calculate_level", "LEVELS", "BADGES", "EXP_REWARDS",
+    # Lingua
     "generate_lesson", "generate_units", "language_chat",
     "extract_vocab_from_text", "explain_mistake", "LANG_NAMES",
+    # Batch1
     "generate_formula_sheet", "generate_mind_map", "generate_podcast_script",
     "analyze_weak_topics", "debate_generate", "debate_verdict",
     "generate_written_test", "generate_mock_test",
+    # Voice / Rooms / Peer
     "voice_tutor_reply", "generate_room_questions",
     "verify_peer_answer", "transcribe_audio_whisper",
+    # Health
+    "novex_health",
 ]

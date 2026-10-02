@@ -1,274 +1,361 @@
 /* ============================================================
-   NOVEX AI — UI Modes Controller v1.0
+   NOVEX AI v8.0 — UI MODES CONTROLLER (FULL)
+   File: ui-modes.js
+   Deps: none
+   API:  window.NovexUI
    ============================================================ */
 
-(function(){
+(function () {
   'use strict';
 
-  /* ============ UI MODE DEFINITIONS ============ */
+  /* ------------------------------------------------------------
+     1. MODE REGISTRY
+     ------------------------------------------------------------ */
   const UI_MODES = [
-    {
-      id: 'classic',
-      icon: '💬',
-      name: 'Classic',
-      desc: 'Default balanced layout',
-      shortcut: '1'
-    },
-    {
-      id: 'compact',
-      icon: '📱',
-      name: 'Compact',
-      desc: 'Smaller, more visible',
-      shortcut: '2'
-    },
-    {
-      id: 'zen',
-      icon: '🧘',
-      name: 'Zen',
-      desc: 'Minimal, calm, focused',
-      shortcut: '3'
-    },
-    {
-      id: 'focus',
-      icon: '🎯',
-      name: 'Focus',
-      desc: 'Only chat — no chrome',
-      shortcut: '4'
-    },
-    {
-      id: 'dual',
-      icon: '🔀',
-      name: 'Dual Panel',
-      desc: 'Chat + side panel',
-      shortcut: '5'
-    }
+    { id: 'chatgpt',   name: 'ChatGPT',   icon: '💬' },
+    { id: 'sidebar',   name: 'Sidebar',   icon: '📚' },
+    { id: 'compact',   name: 'Compact',   icon: '🔹' },
+    { id: 'zen',       name: 'Zen',       icon: '🧘' },
+    { id: 'split',     name: 'Split',     icon: '🧩' },
+    { id: 'dashboard', name: 'Dashboard', icon: '📊' },
+    { id: 'terminal',  name: 'Terminal',  icon: '⌨️' },
+    { id: 'focus',     name: 'Focus',     icon: '🎯' },
+    { id: 'mobile',    name: 'Mobile',    icon: '📱' },
+    { id: 'floating',  name: 'Floating',  icon: '🪟' }
   ];
 
-  const ALL_UI_CLASSES = UI_MODES.map(m => 'ui-' + m.id);
-  const STORAGE_KEY = 'novex-ui-mode';
+  const STORAGE_KEY   = 'novex-ui-mode';
+  const AUTO_KEY      = 'novex-ui-auto';
+  const DEFAULT_MODE  = 'chatgpt';
+  const MOBILE_BP     = 768;
 
-  /* ============ APPLY UI MODE ============ */
-  window.setUIMode = function(mode){
-    if(!UI_MODES.find(m => m.id === mode)) mode = 'classic';
+  /* ------------------------------------------------------------
+     2. STATE
+     ------------------------------------------------------------ */
+  let currentMode    = DEFAULT_MODE;
+  let autoResponsive = true;
+  let userManuallySet = false;
 
-    // Remove all ui-* classes
-    document.body.classList.remove(...ALL_UI_CLASSES);
+  /* ------------------------------------------------------------
+     3. HELPERS
+     ------------------------------------------------------------ */
+  const $  = (sel, root = document) => root.querySelector(sel);
+  const $$ = (sel, root = document) => Array.from(root.querySelectorAll(sel));
 
-    // Add current one (classic is default = no class needed, but we add for consistency)
-    if(mode !== 'classic'){
-      document.body.classList.add('ui-' + mode);
-    }
+  const isValidMode = (id) => UI_MODES.some(m => m.id === id);
 
-    // Save to localStorage
-    try{ localStorage.setItem(STORAGE_KEY, mode); }catch(e){}
-
-    // Update picker active state
-    const picker = document.getElementById('uiModePicker');
-    if(picker){
-      picker.querySelectorAll('.ui-mode-btn').forEach(b => {
-        b.classList.toggle('active', b.dataset.mode === mode);
-      });
-    }
-
-    // Handle dual panel creation/removal
-    if(mode === 'dual'){
-      ensureDualPanel();
-    } else {
-      const panel = document.querySelector('.dual-panel');
-      if(panel) panel.remove();
-    }
-
-    // Show toast (only if user initiated, not on load)
-    if(!window._uiModeInitializing){
-      const m = UI_MODES.find(m => m.id === mode);
-      if(typeof toast === 'function') toast(`✓ UI: ${m.icon} ${m.name}`);
-    }
-
-    // Trigger resize for layout recalcs
-    window.dispatchEvent(new Event('resize'));
+  const getStoredMode = () => {
+    try { return localStorage.getItem(STORAGE_KEY); }
+    catch { return null; }
   };
 
-  /* ============ DUAL PANEL ============ */
-  function ensureDualPanel(){
-    if(document.querySelector('.dual-panel')) return;
-    const main = document.querySelector('.main');
-    if(!main) return;
-
-    const panel = document.createElement('aside');
-    panel.className = 'dual-panel';
-    panel.innerHTML = `
-      <div class="dual-panel-head">
-        <span>📌 Quick Panel</span>
-        <button onclick="refreshDualPanel()" style="background:none;border:none;color:var(--mut);cursor:pointer;font-size:.9rem" title="Refresh">↻</button>
-      </div>
-      <div class="dual-card">
-        <h4>🎯 Quick Quiz</h4>
-        <p>15 categories, streak bonus, XP multiplier</p>
-        <button class="btn" onclick="openQuiz()">Start Quiz →</button>
-      </div>
-      <div class="dual-card">
-        <h4>🔍 Real-time Search</h4>
-        <p>Serper + DDGS live web search</p>
-        <button class="btn" onclick="openSearchPanel()">Search →</button>
-      </div>
-      <div class="dual-card">
-        <h4>📚 Flashcards + SRS</h4>
-        <p>Spaced repetition review</p>
-        <button class="btn" onclick="openSRS()">Review Now →</button>
-      </div>
-      <div class="dual-card">
-        <h4>🎙️ Voice Assistant</h4>
-        <p>Talk to NOVEX hands-free</p>
-        <button class="btn" onclick="toggleVoiceAssistant()">Start Voice →</button>
-      </div>
-      <div class="dual-card" id="dualRecentCard">
-        <h4>🕐 Recent Chats</h4>
-        <div id="dualRecentList" style="font-size:.72rem;color:var(--dim)">Loading…</div>
-      </div>
-      <div class="dual-card" id="dualStatsCard">
-        <h4>📊 Your Progress</h4>
-        <div id="dualStatsList" style="font-size:.72rem;color:var(--dim)">Loading…</div>
-      </div>
-    `;
-    main.appendChild(panel);
-    loadDualPanelData();
-  }
-
-  window.refreshDualPanel = function(){
-    loadDualPanelData();
-    if(typeof toast === 'function') toast('✓ Refreshed');
+  const setStoredMode = (id) => {
+    try { localStorage.setItem(STORAGE_KEY, id); } catch {}
   };
 
-  async function loadDualPanelData(){
-    // Recent chats
-    try{
-      const r = await fetch('/chats');
-      if(r.ok){
-        const chats = await r.json();
-        const list = document.getElementById('dualRecentList');
-        if(list){
-          const recent = (chats || []).slice(0, 4);
-          list.innerHTML = recent.length
-            ? recent.map(c => `<a href="javascript:void(0)" onclick="loadChat('${c.id}')" style="display:block;padding:.35rem 0;color:var(--cy);text-decoration:none;font-size:.75rem;border-bottom:1px solid var(--bor);overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escapeAttr(c.title||'')}">${escapeHtml((c.title||'').slice(0,40))}</a>`).join('')
-            : '<em>No chats yet</em>';
-        }
-      }
-    }catch(e){}
+  const isSmallScreen = () => window.innerWidth < MOBILE_BP;
 
-    // Stats
-    try{
-      const r = await fetch('/gamification/profile');
-      if(r.ok){
-        const d = await r.json();
-        const list = document.getElementById('dualStatsList');
-        if(list){
-          list.innerHTML = `
-            <div style="line-height:1.7">
-              <div>${d.level_icon||'🌱'} <strong style="color:var(--txt)">${d.level||'Beginner'}</strong></div>
-              <div style="color:var(--dim);font-size:.7rem">${d.exp||0} EXP · ${d.unlocked_count||0}/${d.total_badges||0} badges</div>
-              <div style="color:var(--dim);font-size:.7rem;margin-top:.3rem">🎯 ${(d.stats?.quiz_count||0)} quizzes · 📚 ${(d.stats?.flashcards_reviewed||0)} cards</div>
-            </div>
-          `;
-        }
-      }
-    }catch(e){}
-  }
+  /* ------------------------------------------------------------
+     4. CORE: APPLY MODE
+     ------------------------------------------------------------ */
+  function applyMode(id, opts = {}) {
+    if (!isValidMode(id)) id = DEFAULT_MODE;
 
-  function escapeHtml(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}
-  function escapeAttr(s){return escapeHtml(s).replace(/"/g,'&quot;')}
+    currentMode = id;
+    document.documentElement.dataset.ui = id;
 
-  /* ============ UI MODE PICKER ============ */
-  function buildUIModePicker(){
-    if(document.getElementById('uiModePicker')) return;
-
-    const picker = document.createElement('div');
-    picker.className = 'ui-mode-picker';
-    picker.id = 'uiModePicker';
-
-    const current = localStorage.getItem(STORAGE_KEY) || 'classic';
-
-    let html = `<div class="ui-mode-picker-label">🖥️ UI Layout Mode</div>`;
-    UI_MODES.forEach(m => {
-      html += `
-        <button class="ui-mode-btn ${m.id===current?'active':''}" data-mode="${m.id}"
-                onclick="setUIMode('${m.id}');closeUIModePicker()">
-          <span class="uic-icon">${m.icon}</span>
-          <div class="uic-body">
-            <div class="uic-name">${m.name}</div>
-            <div class="uic-desc">${m.desc}</div>
-          </div>
-          <span class="uic-check">✓</span>
-        </button>
-      `;
+    // Update any picker buttons
+    $$('[data-ui-btn]').forEach(btn => {
+      btn.classList.toggle('active', btn.dataset.uiBtn === id);
     });
-    html += `<div style="font-size:.65rem;color:var(--mut);padding:.5rem .6rem;border-top:1px solid var(--bor);margin-top:.3rem">Shortcut: <kbd style="background:var(--sur3);padding:1px 4px;border-radius:3px">⌘/</kbd> → 1-5</div>`;
-    picker.innerHTML = html;
 
-    document.body.appendChild(picker);
+    // Close sidebar on mode change (mobile-ish modes)
+    if (['zen', 'focus', 'mobile'].includes(id)) {
+      closeSidebar();
+    }
+
+    // Persist (unless caller says not to)
+    if (opts.persist !== false) {
+      setStoredMode(id);
+      if (opts.userAction) userManuallySet = true;
+    }
+
+    // Dispatch event
+    document.dispatchEvent(new CustomEvent('novex:ui-changed', {
+      detail: { mode: id, userAction: !!opts.userAction }
+    }));
+
+    return id;
   }
 
-  window.openUIModePicker = function(){
-    buildUIModePicker();
-    const p = document.getElementById('uiModePicker');
-    if(p) p.classList.toggle('open');
-  };
+  /* ------------------------------------------------------------
+     5. SIDEBAR (mobile / focus / offcanvas)
+     ------------------------------------------------------------ */
+  function openSidebar() {
+    const sb = $('.sidebar');
+    if (!sb) return;
+    sb.classList.add('open');
+    sb.setAttribute('aria-hidden', 'false');
+    document.body.classList.add('sidebar-open');
+  }
 
-  window.closeUIModePicker = function(){
-    const p = document.getElementById('uiModePicker');
-    if(p) p.classList.remove('open');
-  };
+  function closeSidebar() {
+    const sb = $('.sidebar');
+    if (!sb) return;
+    sb.classList.remove('open');
+    sb.setAttribute('aria-hidden', 'true');
+    document.body.classList.remove('sidebar-open');
+  }
 
-  /* ============ KEYBOARD SHORTCUTS ============ */
-  document.addEventListener('keydown', e => {
-    // ⌘/ or Ctrl+/ → open picker
-    if((e.metaKey || e.ctrlKey) && e.key === '/'){
-      e.preventDefault();
-      window.openUIModePicker();
-      return;
-    }
+  function toggleSidebar() {
+    const sb = $('.sidebar');
+    if (!sb) return;
+    if (sb.classList.contains('open')) closeSidebar();
+    else openSidebar();
+  }
 
-    // Escape → close picker
-    if(e.key === 'Escape'){
-      window.closeUIModePicker();
-    }
+  /* ------------------------------------------------------------
+     6. KEYBOARD SHORTCUTS
+     ------------------------------------------------------------ */
+  function bindKeyboard() {
+    document.addEventListener('keydown', (e) => {
+      const tag = (e.target.tagName || '').toLowerCase();
+      const typing = tag === 'input' || tag === 'textarea' || e.target.isContentEditable;
 
-    // When picker is open: 1-5 → select mode
-    const picker = document.getElementById('uiModePicker');
-    if(picker && picker.classList.contains('open')){
-      const idx = parseInt(e.key);
-      if(idx >= 1 && idx <= 5){
+      // Ctrl/Cmd + Shift + U → cycle UI modes
+      if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === 'u') {
         e.preventDefault();
-        window.setUIMode(UI_MODES[idx-1].id);
-        window.closeUIModePicker();
+        cycleMode();
+        return;
       }
-    }
-  });
 
-  /* ============ CLICK OUTSIDE → CLOSE PICKER ============ */
-  document.addEventListener('click', e => {
-    const picker = document.getElementById('uiModePicker');
-    if(!picker) return;
-    if(!e.target.closest('#uiModePicker') && !e.target.closest('[onclick*="openUIModePicker"]')){
-      picker.classList.remove('open');
-    }
-  });
+      // Ctrl/Cmd + B → toggle sidebar
+      if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key.toLowerCase() === 'b') {
+        e.preventDefault();
+        toggleSidebar();
+        return;
+      }
 
-  /* ============ INIT ON LOAD ============ */
-  function init(){
-    window._uiModeInitializing = true;
-    const saved = localStorage.getItem(STORAGE_KEY) || 'classic';
-    window.setUIMode(saved);
-    setTimeout(() => { window._uiModeInitializing = false; }, 500);
+      // Esc → close sidebar / modals
+      if (e.key === 'Escape') {
+        closeSidebar();
+        $$('.modal.open, .settings-modal.open').forEach(m => m.classList.remove('open'));
+        return;
+      }
+
+      // Numbered modes: Alt + 1..9 → switch
+      if (e.altKey && !typing && /^[1-9]$/.test(e.key)) {
+        const idx = parseInt(e.key, 10) - 1;
+        if (UI_MODES[idx]) {
+          e.preventDefault();
+          applyMode(UI_MODES[idx].id, { userAction: true });
+        }
+      }
+    });
   }
 
-  if(document.readyState === 'loading'){
+  /* ------------------------------------------------------------
+     7. CYCLE MODES
+     ------------------------------------------------------------ */
+  function cycleMode() {
+    const idx = UI_MODES.findIndex(m => m.id === currentMode);
+    const next = UI_MODES[(idx + 1) % UI_MODES.length];
+    applyMode(next.id, { userAction: true });
+    toast(`${next.icon} UI: ${next.name}`);
+  }
+
+  /* ------------------------------------------------------------
+     8. AUTO-RESPONSIVE (small screens → mobile mode)
+     ------------------------------------------------------------ */
+  function bindResponsive() {
+    let lastSmall = isSmallScreen();
+
+    const onResize = () => {
+      if (!autoResponsive) return;
+      const small = isSmallScreen();
+
+      // Enter small screen → force mobile mode (remember previous)
+      if (small && !lastSmall) {
+        const prev = currentMode;
+        sessionStorage.setItem('novex-ui-prev', prev);
+        applyMode('mobile', { persist: false });
+      }
+
+      // Leave small screen → restore previous mode
+      if (!small && lastSmall) {
+        const prev = sessionStorage.getItem('novex-ui-prev');
+        if (prev && isValidMode(prev)) {
+          applyMode(prev, { persist: false });
+        } else {
+          applyMode(getStoredMode() || DEFAULT_MODE, { persist: false });
+        }
+      }
+
+      lastSmall = small;
+    };
+
+    let raf;
+    window.addEventListener('resize', () => {
+      cancelAnimationFrame(raf);
+      raf = requestAnimationFrame(onResize);
+    });
+  }
+
+  /* ------------------------------------------------------------
+     9. CLICK BINDINGS
+     ------------------------------------------------------------ */
+  function bindClicks() {
+    document.addEventListener('click', (e) => {
+      // UI picker buttons
+      const uiBtn = e.target.closest('[data-ui-btn]');
+      if (uiBtn) {
+        e.preventDefault();
+        applyMode(uiBtn.dataset.uiBtn, { userAction: true });
+        return;
+      }
+
+      // Sidebar toggle buttons
+      const toggleBtn = e.target.closest('[data-toggle-sidebar], .sidebar-toggle, #menuBtn');
+      if (toggleBtn) {
+        e.preventDefault();
+        toggleSidebar();
+        return;
+      }
+
+      // Click outside sidebar (mobile) → close
+      const sb = $('.sidebar');
+      if (sb && sb.classList.contains('open')) {
+        if (!e.target.closest('.sidebar') && !e.target.closest('[data-toggle-sidebar], .sidebar-toggle, #menuBtn')) {
+          closeSidebar();
+        }
+      }
+    });
+
+    // Swipe to close sidebar (mobile)
+    let touchX = 0;
+    document.addEventListener('touchstart', (e) => {
+      touchX = e.touches[0].clientX;
+    }, { passive: true });
+
+    document.addEventListener('touchend', (e) => {
+      const sb = $('.sidebar');
+      if (!sb || !sb.classList.contains('open')) return;
+      const dx = e.changedTouches[0].clientX - touchX;
+      if (dx < -60) closeSidebar(); // swipe left
+    });
+  }
+
+  /* ------------------------------------------------------------
+     10. RENDER SETTINGS PICKER (if container exists)
+     ------------------------------------------------------------ */
+  function renderPicker() {
+    const containers = $$('[data-ui-picker]');
+    if (!containers.length) return;
+
+    containers.forEach(container => {
+      container.classList.add('ui-mode-picker');
+      container.innerHTML = UI_MODES.map(m => `
+        <button type="button" data-ui-btn="${m.id}" title="${m.name} (Alt+${UI_MODES.indexOf(m)+1})">
+          ${m.icon} ${m.name}
+        </button>
+      `).join('');
+    });
+
+    // Sync active state
+    $$('[data-ui-btn]').forEach(btn => {
+      btn.classList.toggle('active', btn.dataset.uiBtn === currentMode);
+    });
+  }
+
+  /* ------------------------------------------------------------
+     11. TINY TOAST (optional visual feedback)
+     ------------------------------------------------------------ */
+  function toast(msg) {
+    let el = $('#novex-ui-toast');
+    if (!el) {
+      el = document.createElement('div');
+      el.id = 'novex-ui-toast';
+      Object.assign(el.style, {
+        position: 'fixed',
+        bottom: '24px',
+        left: '50%',
+        transform: 'translateX(-50%) translateY(20px)',
+        background: 'rgba(0,0,0,.85)',
+        color: '#fff',
+        padding: '10px 16px',
+        borderRadius: '12px',
+        fontSize: '13px',
+        fontWeight: '600',
+        zIndex: 99999,
+        opacity: '0',
+        pointerEvents: 'none',
+        transition: 'all .25s ease',
+        backdropFilter: 'blur(10px)',
+        border: '1px solid rgba(255,255,255,.12)'
+      });
+      document.body.appendChild(el);
+    }
+    el.textContent = msg;
+    requestAnimationFrame(() => {
+      el.style.opacity = '1';
+      el.style.transform = 'translateX(-50%) translateY(0)';
+    });
+    clearTimeout(el._t);
+    el._t = setTimeout(() => {
+      el.style.opacity = '0';
+      el.style.transform = 'translateX(-50%) translateY(20px)';
+    }, 1600);
+  }
+
+  /* ------------------------------------------------------------
+     12. PUBLIC API — window.NovexUI
+     ------------------------------------------------------------ */
+  window.NovexUI = {
+    set:         (id) => applyMode(id, { userAction: true }),
+    get:         () => currentMode,
+    cycle:       () => cycleMode(),
+    list:        () => UI_MODES.slice(),
+    openSidebar,
+    closeSidebar,
+    toggleSidebar,
+    setAuto:     (on) => { autoResponsive = !!on; try { localStorage.setItem(AUTO_KEY, on ? '1' : '0'); } catch {} },
+    isAuto:      () => autoResponsive,
+    reset: () => {
+      try { localStorage.removeItem(STORAGE_KEY); } catch {}
+      applyMode(DEFAULT_MODE, { userAction: true });
+    }
+  };
+
+  /* ------------------------------------------------------------
+     13. INIT
+     ------------------------------------------------------------ */
+  function init() {
+    // Restore auto setting
+    try {
+      const a = localStorage.getItem(AUTO_KEY);
+      if (a === '0') autoResponsive = false;
+    } catch {}
+
+    // Restore mode
+    let saved = getStoredMode();
+    if (!isValidMode(saved)) saved = DEFAULT_MODE;
+
+    // If small screen on first load → mobile
+    if (autoResponsive && isSmallScreen()) {
+      saved = 'mobile';
+    }
+
+    applyMode(saved, { persist: false });
+    renderPicker();
+    bindKeyboard();
+    bindClicks();
+    bindResponsive();
+  }
+
+  if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', init);
   } else {
     init();
   }
-
-  /* ============ EXPORT FOR DEBUG ============ */
-  window.UI_MODES = UI_MODES;
-  console.log('✓ UI Modes loaded:', UI_MODES.map(m => m.id).join(', '));
 
 })();
